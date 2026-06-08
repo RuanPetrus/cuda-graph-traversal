@@ -1,0 +1,33 @@
+NVSHMEM Graph Traversal
+
+This repository keeps the NVSHMEM graph traversal implementation derived from the Graph500 benchmark infrastructure. The CPU MPI traversal implementations have been removed.
+
+Build from the repository root:
+
+```sh
+make
+```
+
+The build produces:
+
+- `build/graph500_runner`: NVSHMEM BFS plus NVSHMEM SSSP.
+
+The binary takes `SCALE` and optional `edgefactor` arguments:
+
+```sh
+CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP=mpi mpirun --allow-run-as-root -np 1 ./build/graph500_runner 14 16
+CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP=mpi SKIP_BFS=1 mpirun --allow-run-as-root -np 1 ./build/graph500_runner 14 16
+CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP=mpi SKIP_SSSP=1 mpirun --allow-run-as-root -np 1 ./build/graph500_runner 14 16
+```
+
+Graph generation is implemented in `src/graph_generator.cu`. The shared Graph500 support code still uses MPI for rank coordination, optional MPI file I/O, graph conversion, and validation.
+
+Useful environment variables:
+
+- `SKIP_VALIDATION=1`: disables validation for performance-only runs.
+- `SKIP_BFS=1`: skips BFS.
+- `SKIP_SSSP=1`: skips SSSP.
+- `TMPFILE=<filename>`: stores generated graph tuples using MPI file I/O.
+- `REUSEFILE=1`: reuses graph files named by `TMPFILE`.
+
+Current settings assume a power-of-two MPI process count. Use small scales such as `12` or `14` for smoke tests.
