@@ -7,21 +7,17 @@ MPI_HOME     ?= /usr/lib/x86_64-linux-gnu/openmpi
 NVCC         = $(CUDA_HOME)/bin/nvcc
 
 BUILD_DIR = build
-SRC_DIR = src
+SRC_DIR = src-refactor
 
 COMMON_SOURCES = \
-	$(SRC_DIR)/csr_reference.c \
-	$(SRC_DIR)/graph500_runner.c \
-	$(SRC_DIR)/utils.c \
-	$(SRC_DIR)/validate.c \
-	$(SRC_DIR)/mpi_message.c \
-	$(SRC_DIR)/graph_generator.cu
+	$(SRC_DIR)/graph_generation.cu \
+	$(SRC_DIR)/base.cu \
+	$(SRC_DIR)/mrg_transitions.cu \
+	$(SRC_DIR)/main.cu
 
 HEADERS = \
-	$(SRC_DIR)/common.h \
-	$(SRC_DIR)/csr_reference.h \
-	$(SRC_DIR)/bitmap_reference.h \
-	$(SRC_DIR)/mpi_message.h
+	$(SRC_DIR)/graph_generation.h \
+	$(SRC_DIR)/base.h
 
 BINARY = $(BUILD_DIR)/graph500_runner
 
@@ -32,11 +28,11 @@ all: $(BINARY)
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BINARY): $(SRC_DIR)/traversal.cu $(COMMON_SOURCES) $(HEADERS) | $(BUILD_DIR)
+$(BINARY): $(COMMON_SOURCES) $(HEADERS) | $(BUILD_DIR)
 	$(NVCC) $(CFLAGS) -DSSSP -rdc=true \
 		-I$(NVSHMEM_HOME)/include -I$(MPI_HOME)/include \
 	-o $@ \
-	$(SRC_DIR)/traversal.cu $(COMMON_SOURCES) \
+	$(COMMON_SOURCES) \
 	$(LDFLAGS) -L$(NVSHMEM_HOME)/lib -L$(MPI_HOME)/lib -lnvshmem_host -lnvshmem_device -lmpi -lm
 
 clean:
