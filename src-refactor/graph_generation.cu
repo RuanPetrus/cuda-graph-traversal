@@ -236,8 +236,17 @@ void mrg_seed(Mrg_State* st, u32 seed[5]) {
   st->z5 = seed[4];
 }
 
+void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed) {
+	seed[0] = (u32)(userseed1 & UINT32_C(0x3FFFFFFF)) + 1;
+	seed[1] = (u32)((userseed1 >> 30) & UINT32_C(0x3FFFFFFF)) + 1;
+	seed[2] = (u32)(userseed2 & UINT32_C(0x3FFFFFFF)) + 1;
+	seed[3] = (u32)((userseed2 >> 30) & UINT32_C(0x3FFFFFFF)) + 1;
+	seed[4] = (u32)((userseed2 >> 60) << 4) + (u32)(userseed1 >> 60) + 1;
+}
+
+// TODO(ruan): Do some refactor here
 void generate_kronecker_range(Arena *gpu_arena, 
-							  i32 rank,
+							  u32 rank,
 		                      u32 seed[5] /* All values in [0, 2^31 - 1), not all zero */,
                               u32 logN /* In base 2 */,
                               i64 start_edge, i64 end_edge,

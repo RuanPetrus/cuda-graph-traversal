@@ -35,6 +35,8 @@ typedef double f64;
 #define MEGABYTE(x) ((x)*1024L*1024L)
 #define KILOBYTE(x) ((x)*1024L)
 
+#define INT_CEIL(a, b) (((a) + (b) -1) / (b))
+
 #define ERROR(...)                         \
     do {                                   \
         fprintf(stderr, __VA_ARGS__);      \

@@ -16,8 +16,10 @@
 #include <limits.h>
 #include <mpi.h>
 
+#ifndef USER_SETTINGS
 #ifndef GENERATOR_USE_PACKED_EDGE_TYPE
 #define GENERATOR_USE_PACKED_EDGE_TYPE
+#endif
 #endif
 
 #ifdef GENERATOR_USE_PACKED_EDGE_TYPE

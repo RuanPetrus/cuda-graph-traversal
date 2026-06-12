@@ -29,9 +29,12 @@ struct Mrg_State {
 };
 
 void generate_kronecker_range(Arena *gpu_arena, 
+							  u32 rank,
 		                      u32 seed[5] /* All values in [0, 2^31 - 1), not all zero */,
                               u32 logN /* In base 2 */,
                               i64 start_edge, i64 end_edge,
                               Tuple_Graph* tg);
+
+void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed);
 
 #endif // GRAPH_GENERATION_H
