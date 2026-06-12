@@ -34,6 +34,7 @@ i32 main(i32 argc, char **argv) {
 		i64 end_edge_index = min(start_edge_index + edge_per_rank_count, tg.nglobaledges);
 		generate_kronecker_range(&gpu_arena, rank, seed, SCALE, start_edge_index, end_edge_index, &tg);
 	}
+	// tuple_graph_dump(&tg, start_edge_index); // Use to check against old implementation
 
 	arena_release_gpu(&gpu_arena);
 	MPI_Finalize();

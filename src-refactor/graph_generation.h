@@ -37,4 +37,7 @@ void generate_kronecker_range(Arena *gpu_arena,
 
 void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed);
 
+void tuple_graph_dump(const Tuple_Graph* tg, i64 start_edge);
+void tuple_graph_load(Arena* gpu_arena, Tuple_Graph* tg, i64 start_edge, i64 edge_count);
+
 #endif // GRAPH_GENERATION_H
