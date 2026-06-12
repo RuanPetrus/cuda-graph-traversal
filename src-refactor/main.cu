@@ -1,7 +1,7 @@
 #include <mpi.h>
 #include "graph_generation.h"
 
-#define GPU_MEMORY_SIZE GIGABYTE(4)
+#define GPU_MEMORY_SIZE GIGABYTE(2)
 
 i32 main(i32 argc, char **argv) {
 	MPI_Init(&argc,&argv);
