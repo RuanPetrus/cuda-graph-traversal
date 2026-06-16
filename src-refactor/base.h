@@ -27,9 +27,9 @@ typedef double f64;
 #define true  1
 #define false 0
 
-#define abs(x) ((x) >= 0 ? (x) : -(x))
-#define max(x, y) ((x) >= (y) ? (x) : (y))
-#define min(x, y) ((x) <= (y) ? (x) : (y))
+#define ABS(x) ((x) >= 0 ? (x) : -(x))
+#define MAX(x, y) ((x) >= (y) ? (x) : (y))
+#define MIN(x, y) ((x) <= (y) ? (x) : (y))
 
 #define GIGABYTE(x) ((x)*1024L*1024L*1024L)
 #define MEGABYTE(x) ((x)*1024L*1024L)

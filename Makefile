@@ -14,7 +14,9 @@ COMMON_SOURCES = \
 	$(SRC_DIR)/graph_generation.cu \
 	$(SRC_DIR)/base.cu \
 	$(SRC_DIR)/mrg_transitions.cu \
-	$(SRC_DIR)/main.cu
+	$(SRC_DIR)/traversal.cu \
+	$(SRC_DIR)/main.cu \
+	$(SRC_DIR)/worker.cu
 
 OLD_SOURCES = \
 	$(OLD_SRC_DIR)/graph500_runner.c \
@@ -27,6 +29,8 @@ OLD_SOURCES = \
 
 HEADERS = \
 	$(SRC_DIR)/graph_generation.h \
+	$(SRC_DIR)/traversal.h \
+	$(SRC_DIR)/worker.h \
 	$(SRC_DIR)/base.h
 
 BINARY = $(BUILD_DIR)/graph500_runner

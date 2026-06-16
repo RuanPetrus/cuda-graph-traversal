@@ -135,7 +135,6 @@ Parallel SSSP algorithms often maintain an active set of vertices whose outgoing
 On GPUs, SSSP benefits from exposing large numbers of edge relaxations in parallel, but it also suffers from irregular memory access and atomic contention. In distributed memory, relaxations may target vertices owned by remote ranks. NVSHMEM enables device-side remote updates to distributed distance and parent arrays, allowing the GPU traversal kernel to communicate improvements directly. Termination requires a global condition: the algorithm is complete only when no rank has active work and no in-flight remote update can produce additional work.
 
 \subsection{Graph 500}
-
 \subsubsection*{Benchmark Specification}
 \subsubsection*{Graph 500 Benchmarks 1 (``Search'') and 2 (``Shortest Path'')}
 \subsubsection*{Brief Description of the Graph 500 Benchmark}

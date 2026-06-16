@@ -250,25 +250,25 @@ void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed) {
 }
 
 // TODO(ruan): Do some refactor here
-void generate_kronecker_range(Arena *gpu_arena, 
-							  u32 rank,
+void generate_kronecker_range(Worker_State *ws,
 		                      u32 seed[5] /* All values in [0, 2^31 - 1), not all zero */,
                               u32 logN /* In base 2 */,
                               i64 start_edge, i64 end_edge,
                               Tuple_Graph* tg) {
   Mrg_State state;
   i64 edge_count = end_edge - start_edge;
-  tg->edges_size = (u64)edge_count;
-  tg->max_edges_size = (u64)edge_count;
-  if (edge_count <= 0) return;
+  u64 local_edge_count = edge_count > 0 ? (u64)edge_count : 0;
+  tg->edges_size = local_edge_count;
+  tg->edges = worker_arena_push_array(ws, local_edge_count, Packed_Edge, &tg->max_edges_size);
 
-  i32 device_count = 0;
-  CHECK_CUDA(cudaGetDeviceCount(&device_count));
-  if (device_count <= 0) {
-	ERROR("Rank x: no CUDA devices available for graph generation\n");
+  u64 max_weight_count = 0;
+  tg->weights = worker_arena_push_array(ws, local_edge_count, f32, &max_weight_count);
+  if (max_weight_count != tg->max_edges_size) {
+    ERROR("Mismatched tuple graph allocation sizes");
     ABORT();
   }
-  CHECK_CUDA(cudaSetDevice(rank % device_count));
+  if (edge_count <= 0) return;
+
   mrg_seed(&state, seed);
 
   u64 val0, val1; /* Values for scrambling */
@@ -282,9 +282,6 @@ void generate_kronecker_range(Arena *gpu_arena,
     val1 *= UINT64_C(0xFFFFFFFF);
     val1 += cuda_mrg_get_uint_orig(&new_state);
   }
-
-  tg->edges   = arena_push_array(gpu_arena, edge_count, Packed_Edge);
-  tg->weights = arena_push_array(gpu_arena, edge_count, f32);
 
   i32 threads_per_block = 256;
   i64 blocks_needed = (edge_count + threads_per_block - 1) / threads_per_block;
@@ -336,14 +333,20 @@ void tuple_graph_dump(const Tuple_Graph* tg, i64 start_edge) {
   free(host_weights);
 }
 
-void tuple_graph_load(Arena* gpu_arena, Tuple_Graph* tg, i64 start_edge, i64 edge_count) {
-  tg->edges_size = (u64)edge_count;
-  tg->max_edges_size = (u64)edge_count;
-  tg->edges = edge_count > 0 ? arena_push_array(gpu_arena, edge_count, Packed_Edge) : NULL;
-  tg->weights = edge_count > 0 ? arena_push_array(gpu_arena, edge_count, f32) : NULL;
+void tuple_graph_load(Worker_State* ws, Tuple_Graph* tg, i64 start_edge, i64 edge_count) {
+  u64 local_edge_count = edge_count > 0 ? (u64)edge_count : 0;
+  tg->edges_size = local_edge_count;
+  tg->edges = worker_arena_push_array(ws, local_edge_count, Packed_Edge, &tg->max_edges_size);
 
-  size_t edge_bytes = (size_t)edge_count * sizeof(Packed_Edge);
-  size_t weight_bytes = (size_t)edge_count * sizeof(f32);
+  u64 max_weight_count = 0;
+  tg->weights = worker_arena_push_array(ws, local_edge_count, f32, &max_weight_count);
+  if (max_weight_count != tg->max_edges_size) {
+    ERROR("Mismatched tuple graph load allocation sizes");
+    ABORT();
+  }
+
+  size_t edge_bytes = (size_t)local_edge_count * sizeof(Packed_Edge);
+  size_t weight_bytes = (size_t)local_edge_count * sizeof(f32);
   Packed_Edge* host_edges = edge_bytes ? (Packed_Edge*)malloc(edge_bytes) : NULL;
   f32* host_weights = weight_bytes ? (f32*)malloc(weight_bytes) : NULL;
   if ((edge_bytes && !host_edges) || (weight_bytes && !host_weights)) {

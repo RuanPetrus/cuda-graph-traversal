@@ -1,6 +1,7 @@
 #ifndef GRAPH_GENERATION_H
 #define GRAPH_GENERATION_H
 #include "base.h"
+#include "worker.h"
 
 typedef struct Packed_Edge Packed_Edge;
 struct Packed_Edge {
@@ -28,8 +29,8 @@ struct Mrg_State {
   u32 z1, z2, z3, z4, z5;
 };
 
-void generate_kronecker_range(Arena *gpu_arena, 
-							  u32 rank,
+// TODO(ruan): Refactor this to return tg
+void generate_kronecker_range(Worker_State *st, 
 		                      u32 seed[5] /* All values in [0, 2^31 - 1), not all zero */,
                               u32 logN /* In base 2 */,
                               i64 start_edge, i64 end_edge,
@@ -38,6 +39,6 @@ void generate_kronecker_range(Arena *gpu_arena,
 void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed);
 
 void tuple_graph_dump(const Tuple_Graph* tg, i64 start_edge);
-void tuple_graph_load(Arena* gpu_arena, Tuple_Graph* tg, i64 start_edge, i64 edge_count);
+void tuple_graph_load(Worker_State* ws, Tuple_Graph* tg, i64 start_edge, i64 edge_count);
 
 #endif // GRAPH_GENERATION_H

@@ -1,5 +1,6 @@
 #include "base.h"
 #include <string.h>
+#include <nvshmem.h>
 
 u64 mem_align_forward(u64 size, u64 alignment) {
 	return (size + alignment - 1) & ~(alignment - 1);
@@ -17,7 +18,7 @@ void *_arena_push(Arena *arena, u64 size, u64 alignment) {
 		ERROR("Arena out of space");
 		return 0;
 	}
-	void *ptr = arena->base + used_aligned;
+	void *ptr = (u8 *)arena->base + used_aligned;
 	arena->used = new_used;
 	return ptr;
 }
@@ -37,7 +38,11 @@ Arena arena_create_gpu(u64 capacity) {
 		.reserved = aligned_capacity,
 		.used = 0,
 	};
-	cudaMalloc(&arena.base, capacity);
+	arena.base = nvshmem_malloc(aligned_capacity);
+	if (!arena.base && aligned_capacity != 0) {
+		ERROR("Failed to allocate NVSHMEM arena");
+		ABORT();
+	}
 	return arena;
 }
 
@@ -52,7 +57,7 @@ void arena_release_cpu(Arena *arena) {
 
 void arena_release_gpu(Arena *arena) {
     if (arena->base) {
-        cudaFree(arena->base);
+        nvshmem_free(arena->base);
         arena->reserved = 0;
         arena->used = 0;
         arena->base = 0;
@@ -62,4 +67,3 @@ void arena_release_gpu(Arena *arena) {
 void arena_clear(Arena *arena) {
 	arena->used = 0;
 }
-
