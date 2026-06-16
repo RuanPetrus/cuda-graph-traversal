@@ -8,3 +8,4 @@
 *.bin
 *.weights
 build
+dot

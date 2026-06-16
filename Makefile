@@ -15,6 +15,7 @@ COMMON_SOURCES = \
 	$(SRC_DIR)/base.cu \
 	$(SRC_DIR)/mrg_transitions.cu \
 	$(SRC_DIR)/traversal.cu \
+	$(SRC_DIR)/visualization.cu \
 	$(SRC_DIR)/main.cu \
 	$(SRC_DIR)/worker.cu
 
@@ -30,17 +31,28 @@ OLD_SOURCES = \
 HEADERS = \
 	$(SRC_DIR)/graph_generation.h \
 	$(SRC_DIR)/traversal.h \
+	$(SRC_DIR)/visualization.h \
 	$(SRC_DIR)/worker.h \
 	$(SRC_DIR)/base.h
 
 BINARY = $(BUILD_DIR)/graph500_runner
 OLD_BINARY = $(BUILD_DIR)/graph500_runner_old
 
-.PHONY: all old clean
+.PHONY: all old dots-svg clean-dots-svg clean
 
 all: $(BINARY)
 
 old: $(OLD_BINARY)
+
+dots-svg:
+	@command -v dot >/dev/null 2>&1 || { echo "Graphviz 'dot' not found. Install graphviz to build SVGs."; exit 1; }
+	@for file in dot/*.dot; do \
+		[ -e "$$file" ] || { echo "No dot/*.dot files found"; exit 1; }; \
+		dot -Tsvg "$$file" -o "$${file%.dot}.svg"; \
+	done
+
+clean-dots-svg:
+	rm -f dot/*.svg
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)

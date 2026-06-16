@@ -1,5 +1,7 @@
 #include "worker.h"
 #include "graph_generation.h"
+#include "traversal.h"
+#include "visualization.h"
 
 #define GPU_MEMORY_SIZE GIGABYTE(2)
 
@@ -29,6 +31,13 @@ i32 main(i32 argc, char **argv) {
 		i64 end_edge_index = MIN(start_edge_index + edge_per_rank_count, tg.nglobaledges);
 		generate_kronecker_range(&ws, seed, SCALE, start_edge_index, end_edge_index, &tg);
 		tuple_graph_dump(&tg, start_edge_index); // Use to check against old implementation
+	}
+
+	if (getenv("WRITE_DOT")) {
+		tuple_graph_write_dot_files(&ws, &tg, "dot");
+		Oned_Graph g = oned_graph_from_tuple_graph(&ws, &tg, (u64)1 << SCALE);
+		oned_graph_write_dot_files(&ws, &g, "dot");
+		oned_graph_free(&g);
 	}
 
 	worker_finalize(&ws);
