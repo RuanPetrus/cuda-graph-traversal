@@ -111,6 +111,46 @@ __global__ static void bfs_dist_propagate_kernel(const u64 *rowstarts, const u64
 	nvshmem_quiet();
 }
 
+__global__ static void bfs_root_init_kernel(u64 root, i64 *pred, i32 *frontier,
+		i32 *frontier_count, i32 *next_frontier_count, i32 npes) {
+	if (blockIdx.x != 0 || threadIdx.x != 0) return;
+
+	*frontier_count = 0;
+	*next_frontier_count = 0;
+	i32 my_pe = nvshmem_my_pe();
+	if (vertex_owner(root, npes) == my_pe) {
+		u64 root_local = vertex_local(root, npes);
+		pred[root_local] = (i64)root;
+		frontier[0] = (i32)root_local;
+		*frontier_count = 1;
+	}
+}
+
+__global__ static void bfs_expand_kernel(const u64 *rowstarts, const u64 *column, i64 *pred,
+		const i32 *frontier, i32 *next_frontier, const i32 *frontier_count,
+		i32 *next_frontier_count, i32 npes) {
+	i32 tid = blockIdx.x * blockDim.x + threadIdx.x;
+	i32 stride = blockDim.x * gridDim.x;
+	i32 count = *frontier_count;
+	i32 my_pe = nvshmem_my_pe();
+
+	for (i32 idx = tid; idx < count; idx += stride) {
+		u64 src_local = (u64)frontier[idx];
+		u64 src_global = src_local * (u64)npes + (u64)my_pe;
+		for (u64 edge_idx = rowstarts[src_local]; edge_idx < rowstarts[src_local + 1]; ++edge_idx) {
+			u64 dst_global = column[edge_idx];
+			i32 dst_pe = vertex_owner(dst_global, npes);
+			u64 dst_local = vertex_local(dst_global, npes);
+			i64 old = nvshmem_int64_atomic_compare_swap(&pred[dst_local], -1, (i64)src_global, dst_pe);
+			if (old == -1) {
+				i32 pos = nvshmem_int_atomic_fetch_add(next_frontier_count, 1, dst_pe);
+				nvshmem_int_p(&next_frontier[pos], (i32)dst_local, dst_pe);
+			}
+		}
+	}
+	nvshmem_quiet();
+}
+
 Oned_Graph oned_graph_from_tuple_graph(Worker_State *ws, Tuple_Graph* tg, u64 nglobalverts) {
 	Oned_Graph g = {0};
 	g.nglobalverts = nglobalverts;
@@ -242,6 +282,74 @@ void oned_graph_bfs_clear(Worker_State *ws, Bfs_State *bfs) {
 	CHECK_CUDA(cudaMemset(bfs->frontier_count[1], 0, sizeof(i32)));
 	CHECK_CUDA(cudaDeviceSynchronize());
 	nvshmem_barrier_all();
+}
+
+void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root) {
+	if (root >= g->nglobalverts) {
+		ERROR("BFS root %llu is outside graph vertex range [0, %llu)",
+				(unsigned long long)root,
+				(unsigned long long)g->nglobalverts);
+		worker_abort(ws, 1);
+	}
+
+	i32 current = 0;
+	i32 next = 1;
+	i32 rank_size = ws->rank_size;
+
+	i64 *pred = bfs->pred;
+	i32 *frontier_current = bfs->frontier[current];
+	i32 *frontier_next = bfs->frontier[next];
+	i32 *frontier_count_current = bfs->frontier_count[current];
+	i32 *frontier_count_next = bfs->frontier_count[next];
+	void *init_args[] = {&root, &pred, &frontier_current, &frontier_count_current, &frontier_count_next, &rank_size};
+	i32 status = nvshmemx_collective_launch((const void *)bfs_root_init_kernel, dim3(1), dim3(1), init_args, 0, 0);
+	if (status != 0) {
+		ERROR("NVSHMEM collective launch failed for BFS root init");
+		worker_abort(ws, 1);
+	}
+	CHECK_CUDA(cudaDeviceSynchronize());
+	nvshmem_barrier_all();
+
+	i32 local_count = 0;
+	i64 local_count_64 = 0;
+	i64 global_count = 0;
+	CHECK_CUDA(cudaMemcpy(&local_count, bfs->frontier_count[current], sizeof(local_count), cudaMemcpyDeviceToHost));
+	local_count_64 = local_count;
+	MPI_Allreduce(&local_count_64, &global_count, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+	dim3 expand_block(256);
+	dim3 expand_grid(128);
+	while (global_count > 0) {
+		CHECK_CUDA(cudaMemset(bfs->frontier_count[next], 0, sizeof(i32)));
+		CHECK_CUDA(cudaDeviceSynchronize());
+		nvshmem_barrier_all();
+
+		u64 *rowstarts = g->rowstarts;
+		u64 *column = g->column;
+		pred = bfs->pred;
+		frontier_current = bfs->frontier[current];
+		frontier_next = bfs->frontier[next];
+		frontier_count_current = bfs->frontier_count[current];
+		frontier_count_next = bfs->frontier_count[next];
+		rank_size = ws->rank_size;
+		void *expand_args[] = {&rowstarts, &column, &pred, &frontier_current, &frontier_next,
+				&frontier_count_current, &frontier_count_next, &rank_size};
+		status = nvshmemx_collective_launch((const void *)bfs_expand_kernel, expand_grid, expand_block, expand_args, 0, 0);
+		if (status != 0) {
+			ERROR("NVSHMEM collective launch failed for BFS expansion");
+			worker_abort(ws, 1);
+		}
+		CHECK_CUDA(cudaDeviceSynchronize());
+		nvshmem_barrier_all();
+
+		CHECK_CUDA(cudaMemcpy(&local_count, bfs->frontier_count[next], sizeof(local_count), cudaMemcpyDeviceToHost));
+		local_count_64 = local_count;
+		MPI_Allreduce(&local_count_64, &global_count, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
+
+		i32 tmp = current;
+		current = next;
+		next = tmp;
+	}
 }
 
 i64 *bfs_compute_dist_from_pred(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root) {

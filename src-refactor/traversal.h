@@ -28,6 +28,7 @@ Oned_Graph oned_graph_from_tuple_graph(Worker_State *ws, Tuple_Graph* tg, u64 ng
 b32 oned_graph_is_vertex_isolated(Worker_State *ws, const Oned_Graph *g, u64 global_vertex);
 Bfs_State oned_graph_bfs_create(Worker_State *ws, const Oned_Graph *g);
 void oned_graph_bfs_clear(Worker_State *ws, Bfs_State *bfs);
+void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root);
 i64 *bfs_compute_dist_from_pred(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root);
 void oned_graph_bfs_destroy(Bfs_State *bfs);
 void oned_graph_free(Oned_Graph *g);

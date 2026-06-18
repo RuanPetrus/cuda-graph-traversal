@@ -43,12 +43,6 @@ static i32 generate_bfs_roots(Worker_State *ws, const Oned_Graph *g, u64 seed1, 
 	return root_count;
 }
 
-static void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root) {
-	(void)g;
-	(void)root;
-	oned_graph_bfs_clear(ws, bfs);
-}
-
 __host__ __device__ static i32 validation_vertex_owner(u64 global_vertex, i32 npes) {
 	return (i32)(global_vertex % (u64)npes);
 }
@@ -251,9 +245,9 @@ i32 main(i32 argc, char **argv) {
 
 			oned_graph_bfs_clear(&ws, &bfs);
 			oned_graph_bfs_run(&ws, &g, &bfs, root);
-			if (getenv("WRITE_DOT") && bfs_root_idx == 0) {
+			if (getenv("WRITE_DOT")) {
 				bfs_compute_dist_from_pred(&ws, &g, &bfs, root);
-				bfs_write_dot_files(&ws, &g, &bfs, root, "dot");
+				bfs_write_dot_files_for_root(&ws, &g, &bfs, root, bfs_root_idx, "dot");
 			}
 
 			if (!getenv("SKIP_VALIDATION")) {

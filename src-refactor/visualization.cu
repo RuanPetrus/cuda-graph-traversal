@@ -281,6 +281,10 @@ static void append_bfs_dot_lines(Dot_Buffer *buffer, Worker_State *ws, const u64
 }
 
 void bfs_write_dot_files(Worker_State *ws, const Oned_Graph *g, const Bfs_State *bfs, u64 root, const char *output_dir) {
+	bfs_write_dot_files_for_root(ws, g, bfs, root, -1, output_dir);
+}
+
+void bfs_write_dot_files_for_root(Worker_State *ws, const Oned_Graph *g, const Bfs_State *bfs, u64 root, i32 root_idx, const char *output_dir) {
 	ensure_output_dir(ws, output_dir);
 
 	size_t rowstart_bytes = (size_t)(g->nlocalverts + 1) * sizeof(u64);
@@ -304,17 +308,27 @@ void bfs_write_dot_files(Worker_State *ws, const Oned_Graph *g, const Bfs_State 
 	append_bfs_dot_lines(&lines, ws, host_rowstarts, host_column, host_weights, host_pred, host_dist, bfs->dist != 0, g->nlocalverts, root);
 
 	char local_name[128];
-	snprintf(local_name, sizeof(local_name), "bfs_pe_%03d.dot", ws->rank);
+	if (root_idx >= 0) {
+		snprintf(local_name, sizeof(local_name), "bfs_%03d_pe_%03d.dot", root_idx, ws->rank);
+	} else {
+		snprintf(local_name, sizeof(local_name), "bfs_pe_%03d.dot", ws->rank);
+	}
 	FILE *local_file = open_dot_file(ws, output_dir, local_name);
 	fprintf(local_file, "digraph bfs_pe_%d {\n", ws->rank);
-	fputs("  graph [label=\"BFS predecessor/dist state\", labelloc=t];\n", local_file);
+	fprintf(local_file, "  graph [label=\"BFS predecessor/dist state root=%llu\", labelloc=t];\n", (unsigned long long)root);
 	if (lines.size) fwrite(lines.data, 1, lines.size, local_file);
 	fputs("}\n", local_file);
 	fclose(local_file);
 
-	gather_and_write_global_dot(ws, output_dir, "bfs_global.dot",
-			"digraph bfs_global {\n  graph [label=\"BFS predecessor/dist state\", labelloc=t];\n",
-			"}\n", &lines);
+	char global_name[128];
+	if (root_idx >= 0) {
+		snprintf(global_name, sizeof(global_name), "bfs_%03d_global.dot", root_idx);
+	} else {
+		snprintf(global_name, sizeof(global_name), "bfs_global.dot");
+	}
+	char header[256];
+	snprintf(header, sizeof(header), "digraph bfs_global {\n  graph [label=\"BFS predecessor/dist state root=%llu\", labelloc=t];\n", (unsigned long long)root);
+	gather_and_write_global_dot(ws, output_dir, global_name, header, "}\n", &lines);
 
 	dot_buffer_free(&lines);
 }
