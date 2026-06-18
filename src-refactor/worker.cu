@@ -29,12 +29,14 @@ Worker_State worker_init(i32 argc, char **argv, u64 gpu_memory_size) {
 	attr.mpi_comm = &mpi_comm;
 	nvshmemx_init_attr(NVSHMEMX_INIT_WITH_MPI_COMM, &attr);
 
+	ws.cpu_arena = arena_create_cpu(gpu_memory_size);
 	ws.gpu_arena = arena_create_gpu(gpu_memory_size);
 	return ws;
 }
 
 void worker_finalize(Worker_State *ws) {
 	arena_release_gpu(&ws->gpu_arena);
+	arena_release_cpu(&ws->cpu_arena);
 	nvshmem_finalize();
 	MPI_Finalize();
 }

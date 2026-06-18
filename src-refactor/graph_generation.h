@@ -37,6 +37,7 @@ void generate_kronecker_range(Worker_State *st,
                               Tuple_Graph* tg);
 
 void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed);
+void make_random_numbers(i64 nvalues, u64 userseed1, u64 userseed2, i64 position, f64* result);
 
 void tuple_graph_dump(const Tuple_Graph* tg, i64 start_edge);
 void tuple_graph_load(Worker_State* ws, Tuple_Graph* tg, i64 start_edge, i64 edge_count);

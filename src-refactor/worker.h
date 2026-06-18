@@ -4,6 +4,7 @@
 
 typedef struct State State;
 struct Worker_State {
+	Arena cpu_arena;
 	Arena gpu_arena;
 	i32 rank;
 	i32 rank_size;

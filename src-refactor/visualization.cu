@@ -1,6 +1,7 @@
 #include "visualization.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <mpi.h>
 #include <stdarg.h>
 #include <sys/stat.h>
@@ -227,4 +228,93 @@ void oned_graph_write_dot_files(Worker_State *ws, const Oned_Graph *g, const cha
 	free(host_rowstarts);
 	free(host_column);
 	free(host_weights);
+}
+
+static void append_bfs_vertex_dot_line(Dot_Buffer *buffer, Worker_State *ws, u64 vertex, i64 pred, i64 dist, b32 has_dist, u64 root) {
+	const char *style = "style=filled, fillcolor=\"#edf2f7\", color=\"#4a5568\"";
+	if (vertex == root) {
+		style = "style=filled, fillcolor=\"#ffcc66\", color=\"#cc7a00\", penwidth=3";
+	} else if (pred == -1) {
+		style = "style=filled, fillcolor=\"#eeeeee\", color=\"#999999\"";
+	} else if (has_dist && dist == INT64_MAX) {
+		style = "style=filled, fillcolor=\"#fed7d7\", color=\"#c53030\"";
+	}
+
+	if (has_dist) {
+		dot_buffer_appendf(buffer, "  %llu [label=\"v%llu\\npe=%d local=%llu\\npred=%lld\\ndist=%lld\", %s];\n",
+				(unsigned long long)vertex,
+				(unsigned long long)vertex,
+				vertex_owner_host(vertex, ws),
+				(unsigned long long)vertex_local_host(vertex, ws),
+				(long long)pred,
+				(long long)dist,
+				style);
+	} else {
+		dot_buffer_appendf(buffer, "  %llu [label=\"v%llu\\npe=%d local=%llu\\npred=%lld\\ndist=unset\", %s];\n",
+				(unsigned long long)vertex,
+				(unsigned long long)vertex,
+				vertex_owner_host(vertex, ws),
+				(unsigned long long)vertex_local_host(vertex, ws),
+				(long long)pred,
+				style);
+	}
+}
+
+static void append_bfs_dot_lines(Dot_Buffer *buffer, Worker_State *ws, const u64 *rowstarts, const u64 *column, const f32 *weights,
+		const i64 *pred, const i64 *dist, b32 has_dist, u64 nlocalverts, u64 root) {
+	for (u64 local_vertex = 0; local_vertex < nlocalverts; ++local_vertex) {
+		u64 src = local_vertex * (u64)ws->rank_size + (u64)ws->rank;
+		i64 src_dist = has_dist ? dist[local_vertex] : 0;
+		append_bfs_vertex_dot_line(buffer, ws, src, pred[local_vertex], src_dist, has_dist, root);
+		for (u64 edge_idx = rowstarts[local_vertex]; edge_idx < rowstarts[local_vertex + 1]; ++edge_idx) {
+			dot_buffer_appendf(buffer, "  %llu -> %llu [label=\"%.6g\", color=\"#a0aec0\"];\n",
+					(unsigned long long)src,
+					(unsigned long long)column[edge_idx],
+					(double)weights[edge_idx]);
+		}
+		if (pred[local_vertex] != -1) {
+			dot_buffer_appendf(buffer, "  %lld -> %llu [label=\"pred\", color=\"#2b6cb0\", penwidth=3];\n",
+					(long long)pred[local_vertex],
+					(unsigned long long)src);
+		}
+	}
+}
+
+void bfs_write_dot_files(Worker_State *ws, const Oned_Graph *g, const Bfs_State *bfs, u64 root, const char *output_dir) {
+	ensure_output_dir(ws, output_dir);
+
+	size_t rowstart_bytes = (size_t)(g->nlocalverts + 1) * sizeof(u64);
+	size_t column_bytes = (size_t)g->nlocaledges * sizeof(u64);
+	size_t weight_bytes = (size_t)g->nlocaledges * sizeof(f32);
+	size_t pred_bytes = (size_t)g->nlocalverts * sizeof(i64);
+	size_t dist_bytes = (size_t)g->nlocalverts * sizeof(i64);
+	u64 *host_rowstarts = arena_push_array(&ws->cpu_arena, g->nlocalverts + 1, u64);
+	u64 *host_column = arena_push_array(&ws->cpu_arena, g->nlocaledges, u64);
+	f32 *host_weights = arena_push_array(&ws->cpu_arena, g->nlocaledges, f32);
+	i64 *host_pred = arena_push_array(&ws->cpu_arena, g->nlocalverts, i64);
+	i64 *host_dist = bfs->dist ? arena_push_array(&ws->cpu_arena, g->nlocalverts, i64) : 0;
+
+	if (rowstart_bytes) CHECK_CUDA(cudaMemcpy(host_rowstarts, g->rowstarts, rowstart_bytes, cudaMemcpyDeviceToHost));
+	if (column_bytes) CHECK_CUDA(cudaMemcpy(host_column, g->column, column_bytes, cudaMemcpyDeviceToHost));
+	if (weight_bytes) CHECK_CUDA(cudaMemcpy(host_weights, g->weights, weight_bytes, cudaMemcpyDeviceToHost));
+	if (pred_bytes) CHECK_CUDA(cudaMemcpy(host_pred, bfs->pred, pred_bytes, cudaMemcpyDeviceToHost));
+	if (bfs->dist && dist_bytes) CHECK_CUDA(cudaMemcpy(host_dist, bfs->dist, dist_bytes, cudaMemcpyDeviceToHost));
+
+	Dot_Buffer lines = {0};
+	append_bfs_dot_lines(&lines, ws, host_rowstarts, host_column, host_weights, host_pred, host_dist, bfs->dist != 0, g->nlocalverts, root);
+
+	char local_name[128];
+	snprintf(local_name, sizeof(local_name), "bfs_pe_%03d.dot", ws->rank);
+	FILE *local_file = open_dot_file(ws, output_dir, local_name);
+	fprintf(local_file, "digraph bfs_pe_%d {\n", ws->rank);
+	fputs("  graph [label=\"BFS predecessor/dist state\", labelloc=t];\n", local_file);
+	if (lines.size) fwrite(lines.data, 1, lines.size, local_file);
+	fputs("}\n", local_file);
+	fclose(local_file);
+
+	gather_and_write_global_dot(ws, output_dir, "bfs_global.dot",
+			"digraph bfs_global {\n  graph [label=\"BFS predecessor/dist state\", labelloc=t];\n",
+			"}\n", &lines);
+
+	dot_buffer_free(&lines);
 }

@@ -89,6 +89,10 @@ __host__ __device__ static f32 cuda_mrg_get_float_orig(Mrg_State* state) {
   return (f32)cuda_mrg_get_uint_orig(state) * .000000000465661287524579692f;
 }
 
+__host__ __device__ static f64 cuda_mrg_get_double_orig(Mrg_State* state) {
+  return (f64)cuda_mrg_get_uint_orig(state) * .0000000004656612875245796924106;
+}
+
 /* Initiator settings: for faster random number generation, the initiator
  * probabilities are defined as fractions (a = INITIATOR_A_NUMERATOR /
  * INITIATOR_DENOMINATOR, b = c = INITIATOR_BC_NUMERATOR /
@@ -247,6 +251,18 @@ void make_mrg_seed(u64 userseed1, u64 userseed2, u32* seed) {
 	seed[2] = (u32)(userseed2 & UINT32_C(0x3FFFFFFF)) + 1;
 	seed[3] = (u32)((userseed2 >> 30) & UINT32_C(0x3FFFFFFF)) + 1;
 	seed[4] = (u32)((userseed2 >> 60) << 4) + (u32)(userseed1 >> 60) + 1;
+}
+
+void make_random_numbers(i64 nvalues, u64 userseed1, u64 userseed2, i64 position, f64* result) {
+  u32 seed[5];
+  make_mrg_seed(userseed1, userseed2, seed);
+
+  Mrg_State state;
+  mrg_seed(&state, seed);
+  cuda_mrg_skip(&state, 2, 0, 2 * (u64)position);
+  for (i64 i = 0; i < nvalues; ++i) {
+    result[i] = cuda_mrg_get_double_orig(&state);
+  }
 }
 
 // TODO(ruan): Do some refactor here
