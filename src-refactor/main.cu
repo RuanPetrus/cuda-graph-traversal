@@ -66,11 +66,13 @@ __global__ static void bfs_validate_init_kernel(const i64 *pred, const i64 *dist
 		u64 global_vertex = local_vertex * (u64)npes + (u64)rank;
 		confirmed[local_vertex] = 0;
 
+		// Step 1: predecessor values must be either -1 or a valid global vertex.
 		i64 p = pred[local_vertex];
 		if (p != -1 && (p < 0 || (u64)p >= nglobalverts)) {
 			nvshmem_uint64_atomic_add(error_count, 1, rank);
 		}
 
+		// Step 2: the root must point to itself and have distance zero.
 		if (global_vertex == root) {
 			if (p != (i64)root || dist[local_vertex] != 0) {
 				nvshmem_uint64_atomic_add(error_count, 1, rank);
@@ -94,6 +96,7 @@ __global__ static void bfs_validate_edges_kernel(const u64 *rowstarts, const u64
 
 		for (u64 edge_idx = rowstarts[src_local]; edge_idx < rowstarts[src_local + 1]; ++edge_idx) {
 			u64 dst_global = column[edge_idx];
+			// Step 3: self edges are ignored by graph construction and should not be present here.
 			if (dst_global == src_global) {
 				nvshmem_uint64_atomic_add(error_count, 1, rank);
 				continue;
@@ -104,13 +107,16 @@ __global__ static void bfs_validate_edges_kernel(const u64 *rowstarts, const u64
 			i64 dst_pred = nvshmem_int64_g(&pred[dst_local], dst_pe);
 			i64 dst_dist = nvshmem_int64_g(&dist[dst_local], dst_pe);
 
+			// Step 4: no edge may connect a visited vertex to an unvisited vertex.
 			if ((src_dist == -1 && dst_dist != -1) || (src_dist != -1 && dst_dist == -1)) {
 				nvshmem_uint64_atomic_add(error_count, 1, rank);
 			}
+			// Step 5: BFS distances on an edge may differ by at most one level.
 			if (src_dist >= 0 && dst_dist >= 0 && (src_dist + 1 < dst_dist || dst_dist + 1 < src_dist)) {
 				nvshmem_uint64_atomic_add(error_count, 1, rank);
 			}
 
+			// Step 6: mark vertices whose claimed predecessor is confirmed by this edge.
 			if (src_pred == (i64)dst_global) {
 				confirmed[src_local] = 1;
 			}
@@ -130,6 +136,7 @@ __global__ static void bfs_validate_confirmed_kernel(const i64 *pred, const i64 
 	for (u64 local_vertex = tid; local_vertex < nlocalverts; local_vertex += stride) {
 		u64 global_vertex = local_vertex * (u64)npes + (u64)rank;
 		if (pred[local_vertex] == -1) continue;
+		// Step 7: every reached non-root vertex must have a resolved distance and a confirmed predecessor edge.
 		if (dist[local_vertex] == INT64_MAX || (global_vertex != root && !confirmed[local_vertex])) {
 			nvshmem_uint64_atomic_add(error_count, 1, rank);
 		}
@@ -137,32 +144,25 @@ __global__ static void bfs_validate_confirmed_kernel(const i64 *pred, const i64 
 	nvshmem_quiet();
 }
 
-static b32 oned_graph_bfs_validate(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root) {
+static b32 oned_graph_bfs_validate(Worker_State *ws, Arena *temp_arena, const Oned_Graph *g, Bfs_State *bfs, u64 root) {
+	// Validation setup: derive BFS distances from the distributed predecessor tree.
 	i64 *dist = bfs_compute_dist_from_pred(ws, g, bfs, root);
 
-	u64 max_confirmed_count = 0;
-	i32 *confirmed = worker_arena_push_array(ws, g->nlocalverts, i32, &max_confirmed_count);
-	if (max_confirmed_count != bfs->max_nlocalverts) {
-		ERROR("Mismatched BFS validation confirmed allocation size");
-		worker_abort(ws, 1);
-	}
-
-	u64 max_error_count = 0;
-	u64 *error_count = worker_arena_push_array(ws, 1, u64, &max_error_count);
-	if (max_error_count != 1) {
-		ERROR("Mismatched BFS validation error allocation size");
-		worker_abort(ws, 1);
-	}
+	// Validation setup: allocate symmetric buffers for predecessor confirmation and error counting.
+	i32 *confirmed = arena_push_array(temp_arena, bfs->max_nlocalverts, i32);
+	u64 *error_count = arena_push_array(temp_arena, 1, u64);
 
 	CHECK_CUDA(cudaMemset(error_count, 0, sizeof(u64)));
 	CHECK_CUDA(cudaDeviceSynchronize());
 	nvshmem_barrier_all();
 
+	// Validation setup: use one local thread domain per PE over that PE's owned vertices.
 	i32 threads_per_block = 256;
 	u64 blocks_needed = INT_CEIL(g->nlocalverts, (u64)threads_per_block);
 	i32 blocks = blocks_needed > 65535 ? 65535 : (i32)blocks_needed;
 	if (blocks == 0) blocks = 1;
 
+	// Validation pass 1: clear confirmations, check predecessor range, and validate the root.
 	bfs_validate_init_kernel<<<blocks, threads_per_block>>>(bfs->pred, dist, confirmed, error_count,
 			g->nlocalverts, g->nglobalverts, root, ws->rank, ws->rank_size);
 	CHECK_CUDA(cudaGetLastError());
@@ -176,6 +176,7 @@ static b32 oned_graph_bfs_validate(Worker_State *ws, const Oned_Graph *g, Bfs_St
 	i32 rank = ws->rank;
 	i32 rank_size = ws->rank_size;
 	void *edge_args[] = {&rowstarts, &column, &pred, &dist, &confirmed, &error_count, &nlocalverts, &rank, &rank_size};
+	// Validation pass 2: scan distributed CSR edges, compare remote pred/dist, and confirm predecessor edges.
 	i32 status = nvshmemx_collective_launch((const void *)bfs_validate_edges_kernel, dim3(blocks), dim3(threads_per_block), edge_args, 0, 0);
 	if (status != 0) {
 		ERROR("NVSHMEM collective launch failed for BFS validation edges");
@@ -184,12 +185,14 @@ static b32 oned_graph_bfs_validate(Worker_State *ws, const Oned_Graph *g, Bfs_St
 	CHECK_CUDA(cudaDeviceSynchronize());
 	nvshmem_barrier_all();
 
+	// Validation pass 3: reject reached vertices with unresolved distances or unconfirmed predecessors.
 	bfs_validate_confirmed_kernel<<<blocks, threads_per_block>>>(pred, dist, confirmed, error_count,
 			nlocalverts, root, rank, rank_size);
 	CHECK_CUDA(cudaGetLastError());
 	CHECK_CUDA(cudaDeviceSynchronize());
 	nvshmem_barrier_all();
 
+	// Validation reduction: combine per-PE error counters into a global pass/fail result.
 	u64 local_errors = 0;
 	u64 global_errors = 0;
 	CHECK_CUDA(cudaMemcpy(&local_errors, error_count, sizeof(local_errors), cudaMemcpyDeviceToHost));
@@ -237,6 +240,7 @@ i32 main(i32 argc, char **argv) {
 
 	if (!getenv("SKIP_BFS") && bfs_root_count > 0) {
 		Bfs_State bfs = oned_graph_bfs_create(&ws, &g);
+		Arena validation_arena = arena_create_gpu(bfs.max_nlocalverts * sizeof(i32) + sizeof(u64) + KILOBYTE(4));
 
 		oned_graph_bfs_clear(&ws, &bfs);
 		oned_graph_bfs_run(&ws, &g, &bfs, bfs_roots[0]); // Warm-up, like the original Graph500 runner.
@@ -254,7 +258,8 @@ i32 main(i32 argc, char **argv) {
 
 			if (!getenv("SKIP_VALIDATION")) {
 				if (ws.rank == 0) fprintf(stderr, "Validating BFS %d\n", bfs_root_idx);
-				b32 validation_passed = oned_graph_bfs_validate(&ws, &g, &bfs, root);
+				b32 validation_passed = oned_graph_bfs_validate(&ws, &validation_arena, &g, &bfs, root);
+				arena_clear(&validation_arena);
 				if (!validation_passed) {
 					if (ws.rank == 0) fprintf(stderr, "Validation failed for this BFS root; skipping rest.\n");
 					break;
@@ -262,6 +267,7 @@ i32 main(i32 argc, char **argv) {
 			}
 		}
 
+		arena_release_gpu(&validation_arena);
 		oned_graph_bfs_destroy(&bfs);
 	}
 
