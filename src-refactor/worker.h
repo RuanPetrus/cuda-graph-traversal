@@ -13,6 +13,7 @@ struct Worker_State {
 Worker_State worker_init(i32 argc, char **argv, u64 gpu_memory_size);
 void worker_finalize(Worker_State *ws);
 void worker_abort(Worker_State *ws, i32 return_code);
+void worker_kernel_launch(Worker_State *ws, const void *kernel, void **args, u64 work_count, i32 threads_per_block, const char *label);
 void *_worker_arena_push_array(Worker_State *ws, u64 local_count, u64 elem_size, u64 alignment, u64 *max_count_out);
 
 #define worker_arena_push_array(ws, count, type, max_count_out) \

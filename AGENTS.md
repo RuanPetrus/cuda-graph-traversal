@@ -46,6 +46,17 @@ make dots-svg
 
 Important environment variables from the original runner include `SKIP_BFS=1`, `SKIP_SSSP=1`, `SKIP_VALIDATION=1`, `TMPFILE=<filename>`, and `REUSEFILE=1`. The refactored runner currently uses `WRITE_DOT` and always calls `tuple_graph_dump()` in `main.cu`.
 
+## Measured Scale Limits
+
+Current measurements are for the refactored runner on the available single 16 GB GPU, `edgefactor=16`, `CUDA_VISIBLE_DEVICES=0`, and `NVSHMEM_BOOTSTRAP=mpi`.
+
+- `-np 1`: scale 23 runs all 64 BFS roots with validation enabled. Scale 24 fails during CSR column allocation with `Arena out of space`.
+- `-np 1 SKIP_VALIDATION=1`: scale 23 runs all 64 BFS roots. Scale 24 fails during CSR column allocation.
+- `-np 2` with both PEs sharing one GPU: scale 23 runs all 64 BFS roots with validation enabled. Scale 24 fails during CSR column allocation even with `SKIP_VALIDATION=1`.
+- The current max practical scale is therefore scale 23 for `edgefactor=16` on this environment.
+- `worker_init()` auto-sizes the NVSHMEM GPU arena when `GPU_MEMORY_SIZE` is `0`; PEs sharing a GPU split the reported free memory before applying headroom. If `NVSHMEM_SYMMETRIC_SIZE` is set externally, it overrides this auto-size behavior.
+- NVSHMEM collective kernels should be launched via `worker_kernel_launch()`, which queries `nvshmemx_collective_launch_query_gridsize()` and synchronizes after launch. Do not hard-code collective-launch block limits.
+
 ## Refactor Architecture
 
 The current refactor is C-style CUDA/C++ and is organized around these modules:

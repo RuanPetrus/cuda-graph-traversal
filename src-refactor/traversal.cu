@@ -161,16 +161,8 @@ Oned_Graph oned_graph_from_tuple_graph(Worker_State *ws, Tuple_Graph* tg, u64 ng
 	u64 *degrees = worker_arena_push_array(ws, g.nlocalverts, u64, &max_degree_count);
 	CHECK_CUDA(cudaMemset(degrees, 0, max_degree_count * sizeof(u64)));
 	if (tg->edges_size > 0) {
-		i32 threads_per_block = 256;
-		u64 blocks_needed = INT_CEIL(tg->edges_size, (u64)threads_per_block);
-		i32 blocks = blocks_needed > 65535 ? 65535 : (i32)blocks_needed;
 		void *args[] = {&tg->edges, &tg->edges_size, &degrees, &ws->rank_size};
-		i32 status = nvshmemx_collective_launch((const void *)compute_degrees_kernel, dim3(blocks), dim3(threads_per_block), args, 0, 0);
-		if (status != 0) {
-			ERROR("NVSHMEM collective launch failed for degree computation");
-			worker_abort(ws, 1);
-		}
-		CHECK_CUDA(cudaDeviceSynchronize());
+		worker_kernel_launch(ws, (const void *)compute_degrees_kernel, args, tg->edges_size, 256, "degree computation");
 	}
 	nvshmem_barrier_all();
 
@@ -201,16 +193,8 @@ Oned_Graph oned_graph_from_tuple_graph(Worker_State *ws, Tuple_Graph* tg, u64 ng
 	}
 	// Use the degree buffer, and the rowstart buffer to compute column and weights
 	if (tg->edges_size > 0) {
-		i32 threads_per_block = 256;
-		u64 blocks_needed = INT_CEIL(tg->edges_size, (u64)threads_per_block);
-		i32 blocks = blocks_needed > 65535 ? 65535 : (i32)blocks_needed;
 		void *args[] = {&tg->edges, &tg->weights, &tg->edges_size, &degrees, &g.rowstarts, &g.column, &g.weights, &ws->rank_size};
-		i32 status = nvshmemx_collective_launch((const void *)fill_csr_kernel, dim3(blocks), dim3(threads_per_block), args, 0, 0);
-		if (status != 0) {
-			ERROR("NVSHMEM collective launch failed for CSR fill");
-			worker_abort(ws, 1);
-		}
-		CHECK_CUDA(cudaDeviceSynchronize());
+		worker_kernel_launch(ws, (const void *)fill_csr_kernel, args, tg->edges_size, 256, "CSR fill");
 	}
 	nvshmem_barrier_all();
 	return g;
@@ -302,12 +286,7 @@ void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u
 	i32 *frontier_count_current = bfs->frontier_count[current];
 	i32 *frontier_count_next = bfs->frontier_count[next];
 	void *init_args[] = {&root, &pred, &frontier_current, &frontier_count_current, &frontier_count_next, &rank_size};
-	i32 status = nvshmemx_collective_launch((const void *)bfs_root_init_kernel, dim3(1), dim3(1), init_args, 0, 0);
-	if (status != 0) {
-		ERROR("NVSHMEM collective launch failed for BFS root init");
-		worker_abort(ws, 1);
-	}
-	CHECK_CUDA(cudaDeviceSynchronize());
+	worker_kernel_launch(ws, (const void *)bfs_root_init_kernel, init_args, 1, 1, "BFS root init");
 	nvshmem_barrier_all();
 
 	i32 local_count = 0;
@@ -317,8 +296,6 @@ void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u
 	local_count_64 = local_count;
 	MPI_Allreduce(&local_count_64, &global_count, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
 
-	dim3 expand_block(256);
-	dim3 expand_grid(128);
 	while (global_count > 0) {
 		CHECK_CUDA(cudaMemset(bfs->frontier_count[next], 0, sizeof(i32)));
 		CHECK_CUDA(cudaDeviceSynchronize());
@@ -334,12 +311,7 @@ void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u
 		rank_size = ws->rank_size;
 		void *expand_args[] = {&rowstarts, &column, &pred, &frontier_current, &frontier_next,
 				&frontier_count_current, &frontier_count_next, &rank_size};
-		status = nvshmemx_collective_launch((const void *)bfs_expand_kernel, expand_grid, expand_block, expand_args, 0, 0);
-		if (status != 0) {
-			ERROR("NVSHMEM collective launch failed for BFS expansion");
-			worker_abort(ws, 1);
-		}
-		CHECK_CUDA(cudaDeviceSynchronize());
+		worker_kernel_launch(ws, (const void *)bfs_expand_kernel, expand_args, (u64)global_count, 256, "BFS expansion");
 		nvshmem_barrier_all();
 
 		CHECK_CUDA(cudaMemcpy(&local_count, bfs->frontier_count[next], sizeof(local_count), cudaMemcpyDeviceToHost));
@@ -399,12 +371,7 @@ i64 *bfs_compute_dist_from_pred(Worker_State *ws, const Oned_Graph *g, Bfs_State
 		i32 rank = ws->rank;
 		i32 rank_size = ws->rank_size;
 		void *args[] = {&rowstarts, &column, &pred, &dist, &nlocalverts, &current_level, &new_visits, &rank, &rank_size};
-		i32 status = nvshmemx_collective_launch((const void *)bfs_dist_propagate_kernel, dim3(blocks), dim3(threads_per_block), args, 0, 0);
-		if (status != 0) {
-			ERROR("NVSHMEM collective launch failed for BFS distance propagation");
-			worker_abort(ws, 1);
-		}
-		CHECK_CUDA(cudaDeviceSynchronize());
+		worker_kernel_launch(ws, (const void *)bfs_dist_propagate_kernel, args, g->nlocalverts, 256, "BFS distance propagation");
 		nvshmem_barrier_all();
 
 		u64 local_new_visits = 0;

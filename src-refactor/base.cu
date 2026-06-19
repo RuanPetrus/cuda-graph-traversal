@@ -46,6 +46,15 @@ Arena arena_create_gpu(u64 capacity) {
 	return arena;
 }
 
+Arena arena_from_arena(Arena *arena, u64 capacity) {
+	u64 aligned_capacity = mem_align_forward(capacity, ARENA_DEFAULT_ALIGNMENT);
+	return (Arena){
+		.reserved = aligned_capacity,
+		.used = 0,
+		.base = arena_push(arena, aligned_capacity),
+	};
+}
+
 void arena_release_cpu(Arena *arena) {
     if (arena->base) {
         free(arena->base);

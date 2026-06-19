@@ -3,12 +3,42 @@
 #include "traversal.h"
 #include "visualization.h"
 
+#include <math.h>
 #include <mpi.h>
 #include <nvshmem.h>
 #include <nvshmemx.h>
 
-#define GPU_MEMORY_SIZE GIGABYTE(2)
+#define GPU_MEMORY_SIZE 0
 #define BFS_ROOT_COUNT 64
+
+enum {s_minimum, s_firstquartile, s_median, s_thirdquartile, s_maximum, s_mean, s_std, s_LAST};
+
+static i32 compare_doubles(const void *a, const void *b) {
+	f64 aa = *(const f64 *)a;
+	f64 bb = *(const f64 *)b;
+	return (aa < bb) ? -1 : (aa == bb) ? 0 : 1;
+}
+
+static void get_statistics(Worker_State *ws, const f64 *x, i32 n, volatile f64 r[s_LAST]) {
+	f64 mean = 0.0;
+	for (i32 i = 0; i < n; ++i) mean += x[i];
+	mean /= n;
+	r[s_mean] = mean;
+
+	f64 variance = 0.0;
+	for (i32 i = 0; i < n; ++i) variance += (x[i] - mean) * (x[i] - mean);
+	variance /= n - 1;
+	r[s_std] = sqrt(variance);
+
+	f64 *sorted = arena_push_array(&ws->cpu_arena, n, f64);
+	memcpy(sorted, x, (u64)n * sizeof(f64));
+	qsort(sorted, n, sizeof(f64), compare_doubles);
+	r[s_minimum] = sorted[0];
+	r[s_firstquartile] = (sorted[(n - 1) / 4] + sorted[n / 4]) * 0.5;
+	r[s_median] = (sorted[(n - 1) / 2] + sorted[n / 2]) * 0.5;
+	r[s_thirdquartile] = (sorted[n - 1 - (n - 1) / 4] + sorted[n - 1 - n / 4]) * 0.5;
+	r[s_maximum] = sorted[n - 1];
+}
 
 static i32 generate_bfs_roots(Worker_State *ws, const Oned_Graph *g, u64 seed1, u64 seed2, u64 *roots, i32 max_roots) {
 	u64 counter = 0;
@@ -138,6 +168,38 @@ __global__ static void bfs_validate_confirmed_kernel(const i64 *pred, const i64 
 	nvshmem_quiet();
 }
 
+__global__ static void bfs_edge_count_kernel(const u64 *rowstarts, const u64 *column, const i64 *pred, u64 nlocalverts, u64 *edge_count, i32 rank, i32 npes) {
+	u64 tid = (u64)blockIdx.x * blockDim.x + threadIdx.x;
+	u64 stride = (u64)blockDim.x * gridDim.x;
+
+	for (u64 local_vertex = tid; local_vertex < nlocalverts; local_vertex += stride) {
+		if (pred[local_vertex] == -1) continue;
+		u64 global_vertex = local_vertex * (u64)npes + (u64)rank;
+		for (u64 edge_idx = rowstarts[local_vertex]; edge_idx < rowstarts[local_vertex + 1]; ++edge_idx) {
+			if (column[edge_idx] <= global_vertex) atomicAdd((unsigned long long *)edge_count, 1ULL);
+		}
+	}
+}
+
+static u64 oned_graph_bfs_edge_count(Worker_State *ws, Arena *temp_arena, const Oned_Graph *g, const Bfs_State *bfs) {
+	u64 *local_edge_count_gpu = arena_push_array(temp_arena, 1, u64);
+	CHECK_CUDA(cudaMemset(local_edge_count_gpu, 0, sizeof(u64)));
+
+	i32 threads_per_block = 256;
+	u64 blocks_needed = INT_CEIL(g->nlocalverts, (u64)threads_per_block);
+	i32 blocks = blocks_needed > 65535 ? 65535 : (i32)blocks_needed;
+	if (blocks == 0) blocks = 1;
+	bfs_edge_count_kernel<<<blocks, threads_per_block>>>(g->rowstarts, g->column, bfs->pred, g->nlocalverts, local_edge_count_gpu, ws->rank, ws->rank_size);
+	CHECK_CUDA(cudaGetLastError());
+	CHECK_CUDA(cudaDeviceSynchronize());
+
+	u64 local_edge_count = 0;
+	u64 global_edge_count = 0;
+	CHECK_CUDA(cudaMemcpy(&local_edge_count, local_edge_count_gpu, sizeof(local_edge_count), cudaMemcpyDeviceToHost));
+	MPI_Allreduce(&local_edge_count, &global_edge_count, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+	return global_edge_count;
+}
+
 static b32 oned_graph_bfs_validate(Worker_State *ws, Arena *temp_arena, const Oned_Graph *g, Bfs_State *bfs, u64 root) {
 	// Validation setup: derive BFS distances from the distributed predecessor tree.
 	i64 *dist = bfs_compute_dist_from_pred(ws, g, bfs, root);
@@ -171,12 +233,7 @@ static b32 oned_graph_bfs_validate(Worker_State *ws, Arena *temp_arena, const On
 	i32 rank_size = ws->rank_size;
 	void *edge_args[] = {&rowstarts, &column, &pred, &dist, &confirmed, &error_count, &nlocalverts, &rank, &rank_size};
 	// Validation pass 2: scan distributed CSR edges, compare remote pred/dist, and confirm predecessor edges.
-	i32 status = nvshmemx_collective_launch((const void *)bfs_validate_edges_kernel, dim3(blocks), dim3(threads_per_block), edge_args, 0, 0);
-	if (status != 0) {
-		ERROR("NVSHMEM collective launch failed for BFS validation edges");
-		worker_abort(ws, 1);
-	}
-	CHECK_CUDA(cudaDeviceSynchronize());
+	worker_kernel_launch(ws, (const void *)bfs_validate_edges_kernel, edge_args, nlocalverts, 256, "BFS validation edges");
 	nvshmem_barrier_all();
 
 	// Validation pass 3: reject reached vertices with unresolved distances or unconfirmed predecessors.
@@ -217,6 +274,7 @@ i32 main(i32 argc, char **argv) {
 
 	u32 seed[5];
 	make_mrg_seed(seed1, seed2, seed);
+	double make_graph_start = MPI_Wtime();
 	{
 		i64 edge_per_rank_count = INT_CEIL(tg.nglobaledges, ws.rank_size);
 		i64 start_edge_index = MIN(edge_per_rank_count * ws.rank, tg.nglobaledges);
@@ -224,44 +282,111 @@ i32 main(i32 argc, char **argv) {
 		generate_kronecker_range(&ws, seed, SCALE, start_edge_index, end_edge_index, &tg);
 		tuple_graph_dump(&tg, start_edge_index); // Use to check against old implementation
 	}
+	double make_graph_stop = MPI_Wtime();
 
+	double data_struct_start = MPI_Wtime();
 	Oned_Graph g = oned_graph_from_tuple_graph(&ws, &tg, (u64)1 << SCALE);
+	double data_struct_stop = MPI_Wtime();
+
 	u64 bfs_roots[BFS_ROOT_COUNT];
 	i32 bfs_root_count = generate_bfs_roots(&ws, &g, seed1, seed2, bfs_roots, BFS_ROOT_COUNT);
-	if (ws.rank == 0) {
-		fprintf(stderr, "bfs_roots:                      %d\n", bfs_root_count);
-	}
 
 	if (!getenv("SKIP_BFS") && bfs_root_count > 0) {
 		Bfs_State bfs = oned_graph_bfs_create(&ws, &g);
-		Arena validation_arena = arena_create_gpu(bfs.max_nlocalverts * sizeof(i32) + sizeof(u64) + KILOBYTE(4));
+		Arena validation_arena = arena_from_arena(&ws.gpu_arena, bfs.max_nlocalverts * sizeof(i32) + sizeof(u64) + KILOBYTE(4));
+		f64 *bfs_times = arena_push_array(&ws.cpu_arena, bfs_root_count, f64);
+		f64 *validate_times = arena_push_array(&ws.cpu_arena, bfs_root_count, f64);
+		f64 *edge_counts = arena_push_array(&ws.cpu_arena, bfs_root_count, f64);
+		i32 completed_bfs_count = 0;
+		b32 validation_passed_all = true;
 
 		oned_graph_bfs_clear(&ws, &bfs);
 		oned_graph_bfs_run(&ws, &g, &bfs, bfs_roots[0]); // Warm-up, like the original Graph500 runner.
 
 		for (i32 bfs_root_idx = 0; bfs_root_idx < bfs_root_count; ++bfs_root_idx) {
 			u64 root = bfs_roots[bfs_root_idx];
-			if (ws.rank == 0) fprintf(stderr, "Running BFS %d\n", bfs_root_idx);
 
 			oned_graph_bfs_clear(&ws, &bfs);
+			double bfs_start = MPI_Wtime();
 			oned_graph_bfs_run(&ws, &g, &bfs, root);
+			double bfs_stop = MPI_Wtime();
+			bfs_times[bfs_root_idx] = bfs_stop - bfs_start;
+			edge_counts[bfs_root_idx] = (f64)oned_graph_bfs_edge_count(&ws, &validation_arena, &g, &bfs);
+			arena_clear(&validation_arena);
 			if (getenv("WRITE_DOT")) {
 				bfs_compute_dist_from_pred(&ws, &g, &bfs, root);
 				bfs_write_dot_files_for_root(&ws, &g, &bfs, root, bfs_root_idx, "dot");
 			}
 
 			if (!getenv("SKIP_VALIDATION")) {
-				if (ws.rank == 0) fprintf(stderr, "Validating BFS %d\n", bfs_root_idx);
+				double validate_start = MPI_Wtime();
 				b32 validation_passed = oned_graph_bfs_validate(&ws, &validation_arena, &g, &bfs, root);
+				double validate_stop = MPI_Wtime();
+				validate_times[bfs_root_idx] = validate_stop - validate_start;
 				arena_clear(&validation_arena);
 				if (!validation_passed) {
 					if (ws.rank == 0) fprintf(stderr, "Validation failed for this BFS root; skipping rest.\n");
+					validation_passed_all = false;
 					break;
 				}
+			} else {
+				validate_times[bfs_root_idx] = -1.0;
 			}
+			completed_bfs_count = bfs_root_idx + 1;
 		}
 
-		arena_release_gpu(&validation_arena);
+		if (ws.rank == 0 && validation_passed_all && completed_bfs_count > 0) {
+			volatile f64 stats[s_LAST];
+			fprintf(stdout, "SCALE:                          %d\n", SCALE);
+			fprintf(stdout, "edgefactor:                     %d\n", edgefactor);
+			fprintf(stdout, "NBFS:                           %d\n", completed_bfs_count);
+			fprintf(stdout, "graph_generation:               %g\n", make_graph_stop - make_graph_start);
+			fprintf(stdout, "num_mpi_processes:              %d\n", ws.rank_size);
+			fprintf(stdout, "construction_time:              %g\n", data_struct_stop - data_struct_start);
+
+			get_statistics(&ws, bfs_times, completed_bfs_count, stats);
+			fprintf(stdout, "bfs  min_time:                  %g\n", stats[s_minimum]);
+			fprintf(stdout, "bfs  firstquartile_time:        %g\n", stats[s_firstquartile]);
+			fprintf(stdout, "bfs  median_time:               %g\n", stats[s_median]);
+			fprintf(stdout, "bfs  thirdquartile_time:        %g\n", stats[s_thirdquartile]);
+			fprintf(stdout, "bfs  max_time:                  %g\n", stats[s_maximum]);
+			fprintf(stdout, "bfs  mean_time:                 %g\n", stats[s_mean]);
+			fprintf(stdout, "bfs  stddev_time:               %g\n", stats[s_std]);
+
+			get_statistics(&ws, edge_counts, completed_bfs_count, stats);
+			fprintf(stdout, "min_nedge:                      %.11g\n", stats[s_minimum]);
+			fprintf(stdout, "firstquartile_nedge:            %.11g\n", stats[s_firstquartile]);
+			fprintf(stdout, "median_nedge:                   %.11g\n", stats[s_median]);
+			fprintf(stdout, "thirdquartile_nedge:            %.11g\n", stats[s_thirdquartile]);
+			fprintf(stdout, "max_nedge:                      %.11g\n", stats[s_maximum]);
+			fprintf(stdout, "mean_nedge:                     %.11g\n", stats[s_mean]);
+			fprintf(stdout, "stddev_nedge:                   %.11g\n", stats[s_std]);
+
+			f64 *secs_per_edge = arena_push_array(&ws.cpu_arena, completed_bfs_count, f64);
+			for (i32 i = 0; i < completed_bfs_count; ++i) secs_per_edge[i] = bfs_times[i] / edge_counts[i];
+			get_statistics(&ws, secs_per_edge, completed_bfs_count, stats);
+			fprintf(stdout, "bfs  min_TEPS:                  %g\n", 1.0 / stats[s_maximum]);
+			fprintf(stdout, "bfs  firstquartile_TEPS:        %g\n", 1.0 / stats[s_thirdquartile]);
+			fprintf(stdout, "bfs  median_TEPS:               %g\n", 1.0 / stats[s_median]);
+			fprintf(stdout, "bfs  thirdquartile_TEPS:        %g\n", 1.0 / stats[s_firstquartile]);
+			fprintf(stdout, "bfs  max_TEPS:                  %g\n", 1.0 / stats[s_minimum]);
+			fprintf(stdout, "bfs  harmonic_mean_TEPS:     !  %g\n", 1.0 / stats[s_mean]);
+			fprintf(stdout, "bfs  harmonic_stddev_TEPS:      %g\n", stats[s_std] / (stats[s_mean] * stats[s_mean] * sqrt(completed_bfs_count - 1)));
+
+			if (!getenv("SKIP_VALIDATION")) {
+				get_statistics(&ws, validate_times, completed_bfs_count, stats);
+				fprintf(stdout, "bfs  min_validate:              %g\n", stats[s_minimum]);
+				fprintf(stdout, "bfs  firstquartile_validate:    %g\n", stats[s_firstquartile]);
+				fprintf(stdout, "bfs  median_validate:           %g\n", stats[s_median]);
+				fprintf(stdout, "bfs  thirdquartile_validate:    %g\n", stats[s_thirdquartile]);
+				fprintf(stdout, "bfs  max_validate:              %g\n", stats[s_maximum]);
+				fprintf(stdout, "bfs  mean_validate:             %g\n", stats[s_mean]);
+				fprintf(stdout, "bfs  stddev_validate:           %g\n", stats[s_std]);
+			}
+		} else if (ws.rank == 0 && !validation_passed_all) {
+			fprintf(stdout, "No results printed for invalid run.\n");
+		}
+
 		oned_graph_bfs_destroy(&bfs);
 	}
 

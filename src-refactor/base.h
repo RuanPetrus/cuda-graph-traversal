@@ -67,6 +67,7 @@ struct Arena {
 
 Arena arena_create_cpu(u64 capacity);
 Arena arena_create_gpu(u64 capacity);
+Arena arena_from_arena(Arena *arena, u64 capacity);
 void arena_release_cpu(Arena *arena);
 void arena_release_gpu(Arena *arena);
 
