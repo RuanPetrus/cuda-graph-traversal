@@ -8,6 +8,7 @@ struct Worker_State {
 	Arena gpu_arena;
 	i32 rank;
 	i32 rank_size;
+	i32 pes_on_device;
 };
 
 Worker_State worker_init(i32 argc, char **argv, u64 gpu_memory_size);

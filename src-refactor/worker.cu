@@ -17,23 +17,21 @@ Worker_State worker_init(i32 argc, char **argv, u64 gpu_memory_size) {
 	}
 	i32 device = ws.rank % device_count;
 	CHECK_CUDA(cudaSetDevice(device));
+	ws.pes_on_device = 1;
+	MPI_Comm shared_comm;
+	MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, ws.rank, MPI_INFO_NULL, &shared_comm);
+	MPI_Comm device_comm;
+	MPI_Comm_split(shared_comm, device, ws.rank, &device_comm);
+	MPI_Comm_size(device_comm, &ws.pes_on_device);
+	MPI_Comm_free(&device_comm);
+	MPI_Comm_free(&shared_comm);
+
 	if (gpu_memory_size == 0) {
-		MPI_Comm shared_comm;
-		MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, ws.rank, MPI_INFO_NULL, &shared_comm);
-
-		MPI_Comm device_comm;
-		MPI_Comm_split(shared_comm, device, ws.rank, &device_comm);
-		i32 pes_on_device = 1;
-		MPI_Comm_size(device_comm, &pes_on_device);
-
 		size_t free_memory = 0;
 		size_t total_memory = 0;
 		CHECK_CUDA(cudaMemGetInfo(&free_memory, &total_memory));
-		u64 local_free_memory = (u64)free_memory / (u64)pes_on_device;
+		u64 local_free_memory = (u64)free_memory / (u64)ws.pes_on_device;
 		MPI_Allreduce(&local_free_memory, &gpu_memory_size, 1, MPI_UINT64_T, MPI_MIN, MPI_COMM_WORLD);
-
-		MPI_Comm_free(&device_comm);
-		MPI_Comm_free(&shared_comm);
 
 		u64 reserve_memory = MAX(gpu_memory_size / 2, MEGABYTE(512));
 		gpu_memory_size = gpu_memory_size > reserve_memory ? gpu_memory_size - reserve_memory : gpu_memory_size / 2;
@@ -76,6 +74,14 @@ i32 worker_kernel_block_count(Worker_State *ws, const void *kernel, void **args,
 		ERROR("NVSHMEM collective launch grid size query failed for %s", label);
 		worker_abort(ws, 1);
 	}
+	int active_blocks_per_sm = 0;
+	CHECK_CUDA(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&active_blocks_per_sm, kernel, threads_per_block, 0));
+	int sm_count = 0;
+	CHECK_CUDA(cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, 0));
+	int resident_blocks = active_blocks_per_sm * sm_count;
+	resident_blocks /= ws->pes_on_device > 0 ? ws->pes_on_device : 1;
+	if (resident_blocks <= 0) resident_blocks = 1;
+	if (resident_blocks > 0 && resident_blocks < max_blocks) max_blocks = resident_blocks;
 
 	u64 blocks_needed = INT_CEIL(work_count, (u64)threads_per_block);
 	if (blocks_needed == 0) blocks_needed = 1;
