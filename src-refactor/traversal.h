@@ -21,6 +21,9 @@ struct Bfs_State {
 	i64 *dist;
 	i32 *frontier[2];
 	i32 *frontier_count[2];
+	u64 *global_frontier_count;
+	u32 *barrier_count;
+	u32 *barrier_sense;
 	u64 max_nlocalverts;
 };
 

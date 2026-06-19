@@ -111,44 +111,99 @@ __global__ static void bfs_dist_propagate_kernel(const u64 *rowstarts, const u64
 	nvshmem_quiet();
 }
 
-__global__ static void bfs_root_init_kernel(u64 root, i64 *pred, i32 *frontier,
-		i32 *frontier_count, i32 *next_frontier_count, i32 npes) {
-	if (blockIdx.x != 0 || threadIdx.x != 0) return;
-
-	*frontier_count = 0;
-	*next_frontier_count = 0;
-	i32 my_pe = nvshmem_my_pe();
-	if (vertex_owner(root, npes) == my_pe) {
-		u64 root_local = vertex_local(root, npes);
-		pred[root_local] = (i64)root;
-		frontier[0] = (i32)root_local;
-		*frontier_count = 1;
-	}
-}
-
-__global__ static void bfs_expand_kernel(const u64 *rowstarts, const u64 *column, i64 *pred,
-		const i32 *frontier, i32 *next_frontier, const i32 *frontier_count,
-		i32 *next_frontier_count, i32 npes) {
-	i32 tid = blockIdx.x * blockDim.x + threadIdx.x;
-	i32 stride = blockDim.x * gridDim.x;
-	i32 count = *frontier_count;
-	i32 my_pe = nvshmem_my_pe();
-
-	for (i32 idx = tid; idx < count; idx += stride) {
-		u64 src_local = (u64)frontier[idx];
-		u64 src_global = src_local * (u64)npes + (u64)my_pe;
-		for (u64 edge_idx = rowstarts[src_local]; edge_idx < rowstarts[src_local + 1]; ++edge_idx) {
-			u64 dst_global = column[edge_idx];
-			i32 dst_pe = vertex_owner(dst_global, npes);
-			u64 dst_local = vertex_local(dst_global, npes);
-			i64 old = nvshmem_int64_atomic_compare_swap(&pred[dst_local], -1, (i64)src_global, dst_pe);
-			if (old == -1) {
-				i32 pos = nvshmem_int_atomic_fetch_add(next_frontier_count, 1, dst_pe);
-				nvshmem_int_p(&next_frontier[pos], (i32)dst_local, dst_pe);
-			}
+__device__ static void bfs_grid_sync(u32 *barrier_count, u32 *barrier_sense, i32 block_count) {
+	__syncthreads();
+	if (threadIdx.x == 0) {
+		volatile u32 *sense = barrier_sense;
+		u32 old_sense = *sense;
+		__threadfence();
+		u32 arrived = atomicAdd((unsigned int *)barrier_count, 1);
+		if (arrived == (u32)block_count - 1) {
+			*barrier_count = 0;
+			__threadfence();
+			*sense = old_sense + 1;
+		} else {
+			while (*sense == old_sense) { }
 		}
 	}
+	__syncthreads();
+}
+
+__device__ static void bfs_device_sync(u32 *barrier_count, u32 *barrier_sense, i32 block_count) {
 	nvshmem_quiet();
+	bfs_grid_sync(barrier_count, barrier_sense, block_count);
+	if (blockIdx.x == 0 && threadIdx.x == 0) nvshmem_barrier_all();
+	bfs_grid_sync(barrier_count, barrier_sense, block_count);
+}
+
+__global__ static void bfs_run_kernel(u64 root, const u64 *rowstarts, const u64 *column, i64 *pred,
+		i32 *frontier0, i32 *frontier1, i32 *frontier_count0, i32 *frontier_count1,
+		u64 *global_frontier_count, u32 *barrier_count, u32 *barrier_sense, i32 block_count, i32 npes) {
+	i32 my_pe = nvshmem_my_pe();
+	i32 *frontier_current = frontier0;
+	i32 *frontier_next = frontier1;
+	i32 *frontier_count_current = frontier_count0;
+	i32 *frontier_count_next = frontier_count1;
+
+	if (threadIdx.x == 0) {
+		if (blockIdx.x == 0) {
+		*frontier_count_current = 0;
+		*frontier_count_next = 0;
+		if (vertex_owner(root, npes) == my_pe) {
+			u64 root_local = vertex_local(root, npes);
+			pred[root_local] = (i64)root;
+			frontier_current[0] = (i32)root_local;
+			*frontier_count_current = 1;
+		}
+		}
+	}
+	bfs_device_sync(barrier_count, barrier_sense, block_count);
+
+	while (true) {
+		if (threadIdx.x == 0 && my_pe == 0) *global_frontier_count = 0;
+		bfs_device_sync(barrier_count, barrier_sense, block_count);
+
+		i32 local_count = *frontier_count_current;
+		if (blockIdx.x == 0 && threadIdx.x == 0) {
+			nvshmem_uint64_atomic_add(global_frontier_count, (u64)local_count, 0);
+		}
+		bfs_device_sync(barrier_count, barrier_sense, block_count);
+
+		u64 global_count = nvshmem_uint64_g(global_frontier_count, 0);
+		__syncthreads();
+		if (global_count == 0) break;
+
+		if (blockIdx.x == 0 && threadIdx.x == 0) *frontier_count_next = 0;
+		bfs_device_sync(barrier_count, barrier_sense, block_count);
+
+		i32 global_thread = (i32)(blockIdx.x * blockDim.x + threadIdx.x);
+		i32 lane = global_thread & 31;
+		i32 warp_idx = global_thread >> 5;
+		i32 warp_count = ((i32)(blockDim.x * gridDim.x)) >> 5;
+		for (i32 idx = warp_idx; idx < local_count; idx += warp_count) {
+			u64 src_local = (u64)frontier_current[idx];
+			u64 src_global = src_local * (u64)npes + (u64)my_pe;
+			for (u64 edge_idx = rowstarts[src_local] + (u64)lane; edge_idx < rowstarts[src_local + 1]; edge_idx += 32) {
+				u64 dst_global = column[edge_idx];
+				i32 dst_pe = vertex_owner(dst_global, npes);
+				u64 dst_local = vertex_local(dst_global, npes);
+				i64 old = nvshmem_int64_atomic_compare_swap(&pred[dst_local], -1, (i64)src_global, dst_pe);
+				if (old == -1) {
+					i32 pos = nvshmem_int_atomic_fetch_add(frontier_count_next, 1, dst_pe);
+					nvshmem_int_p(&frontier_next[pos], (i32)dst_local, dst_pe);
+				}
+			}
+		}
+		bfs_device_sync(barrier_count, barrier_sense, block_count);
+
+		i32 *frontier_tmp = frontier_current;
+		frontier_current = frontier_next;
+		frontier_next = frontier_tmp;
+		i32 *frontier_count_tmp = frontier_count_current;
+		frontier_count_current = frontier_count_next;
+		frontier_count_next = frontier_count_tmp;
+		bfs_grid_sync(barrier_count, barrier_sense, block_count);
+	}
 }
 
 Oned_Graph oned_graph_from_tuple_graph(Worker_State *ws, Tuple_Graph* tg, u64 nglobalverts) {
@@ -250,6 +305,23 @@ Bfs_State oned_graph_bfs_create(Worker_State *ws, const Oned_Graph *g) {
 		ERROR("Mismatched BFS frontier count allocation size");
 		worker_abort(ws, 1);
 	}
+	u64 max_global_count_slots = 0;
+	bfs.global_frontier_count = worker_arena_push_array(ws, 1, u64, &max_global_count_slots);
+	if (max_global_count_slots != 1) {
+		ERROR("Mismatched BFS global frontier count allocation size");
+		worker_abort(ws, 1);
+	}
+	u64 max_barrier_count_slots = 0;
+	bfs.barrier_count = worker_arena_push_array(ws, 1, u32, &max_barrier_count_slots);
+	if (max_barrier_count_slots != 1) {
+		ERROR("Mismatched BFS barrier count allocation size");
+		worker_abort(ws, 1);
+	}
+	bfs.barrier_sense = worker_arena_push_array(ws, 1, u32, &max_barrier_count_slots);
+	if (max_barrier_count_slots != 1) {
+		ERROR("Mismatched BFS barrier sense allocation size");
+		worker_abort(ws, 1);
+	}
 
 	oned_graph_bfs_clear(ws, &bfs);
 
@@ -264,6 +336,9 @@ void oned_graph_bfs_clear(Worker_State *ws, Bfs_State *bfs) {
 	CHECK_CUDA(cudaMemset(bfs->frontier[1], 0, bfs->max_nlocalverts * sizeof(i32)));
 	CHECK_CUDA(cudaMemset(bfs->frontier_count[0], 0, sizeof(i32)));
 	CHECK_CUDA(cudaMemset(bfs->frontier_count[1], 0, sizeof(i32)));
+	CHECK_CUDA(cudaMemset(bfs->global_frontier_count, 0, sizeof(u64)));
+	CHECK_CUDA(cudaMemset(bfs->barrier_count, 0, sizeof(u32)));
+	CHECK_CUDA(cudaMemset(bfs->barrier_sense, 0, sizeof(u32)));
 	CHECK_CUDA(cudaDeviceSynchronize());
 	nvshmem_barrier_all();
 }
@@ -276,52 +351,22 @@ void oned_graph_bfs_run(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u
 		worker_abort(ws, 1);
 	}
 
-	i32 current = 0;
-	i32 next = 1;
 	i32 rank_size = ws->rank_size;
-
+	u64 *rowstarts = g->rowstarts;
+	u64 *column = g->column;
 	i64 *pred = bfs->pred;
-	i32 *frontier_current = bfs->frontier[current];
-	i32 *frontier_next = bfs->frontier[next];
-	i32 *frontier_count_current = bfs->frontier_count[current];
-	i32 *frontier_count_next = bfs->frontier_count[next];
-	void *init_args[] = {&root, &pred, &frontier_current, &frontier_count_current, &frontier_count_next, &rank_size};
-	worker_kernel_launch(ws, (const void *)bfs_root_init_kernel, init_args, 1, 1, "BFS root init");
+	i32 *frontier0 = bfs->frontier[0];
+	i32 *frontier1 = bfs->frontier[1];
+	i32 *frontier_count0 = bfs->frontier_count[0];
+	i32 *frontier_count1 = bfs->frontier_count[1];
+	u64 *global_frontier_count = bfs->global_frontier_count;
+	u32 *barrier_count = bfs->barrier_count;
+	u32 *barrier_sense = bfs->barrier_sense;
+	i32 block_count = 1;
+	void *args[] = {&root, &rowstarts, &column, &pred, &frontier0, &frontier1, &frontier_count0, &frontier_count1, &global_frontier_count, &barrier_count, &barrier_sense, &block_count, &rank_size};
+	block_count = worker_kernel_block_count(ws, (const void *)bfs_run_kernel, args, bfs->max_nlocalverts, 256, "BFS run");
+	worker_kernel_launch(ws, (const void *)bfs_run_kernel, args, bfs->max_nlocalverts, 256, "BFS run");
 	nvshmem_barrier_all();
-
-	i32 local_count = 0;
-	i64 local_count_64 = 0;
-	i64 global_count = 0;
-	CHECK_CUDA(cudaMemcpy(&local_count, bfs->frontier_count[current], sizeof(local_count), cudaMemcpyDeviceToHost));
-	local_count_64 = local_count;
-	MPI_Allreduce(&local_count_64, &global_count, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-	while (global_count > 0) {
-		CHECK_CUDA(cudaMemset(bfs->frontier_count[next], 0, sizeof(i32)));
-		CHECK_CUDA(cudaDeviceSynchronize());
-		nvshmem_barrier_all();
-
-		u64 *rowstarts = g->rowstarts;
-		u64 *column = g->column;
-		pred = bfs->pred;
-		frontier_current = bfs->frontier[current];
-		frontier_next = bfs->frontier[next];
-		frontier_count_current = bfs->frontier_count[current];
-		frontier_count_next = bfs->frontier_count[next];
-		rank_size = ws->rank_size;
-		void *expand_args[] = {&rowstarts, &column, &pred, &frontier_current, &frontier_next,
-				&frontier_count_current, &frontier_count_next, &rank_size};
-		worker_kernel_launch(ws, (const void *)bfs_expand_kernel, expand_args, (u64)global_count, 256, "BFS expansion");
-		nvshmem_barrier_all();
-
-		CHECK_CUDA(cudaMemcpy(&local_count, bfs->frontier_count[next], sizeof(local_count), cudaMemcpyDeviceToHost));
-		local_count_64 = local_count;
-		MPI_Allreduce(&local_count_64, &global_count, 1, MPI_INT64_T, MPI_SUM, MPI_COMM_WORLD);
-
-		i32 tmp = current;
-		current = next;
-		next = tmp;
-	}
 }
 
 i64 *bfs_compute_dist_from_pred(Worker_State *ws, const Oned_Graph *g, Bfs_State *bfs, u64 root) {

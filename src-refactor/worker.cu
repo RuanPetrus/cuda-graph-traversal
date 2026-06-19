@@ -68,7 +68,7 @@ void worker_abort(Worker_State *ws, i32 return_code) {
 	MPI_Abort(MPI_COMM_WORLD, return_code);
 }
 
-void worker_kernel_launch(Worker_State *ws, const void *kernel, void **args, u64 work_count, i32 threads_per_block, const char *label) {
+i32 worker_kernel_block_count(Worker_State *ws, const void *kernel, void **args, u64 work_count, i32 threads_per_block, const char *label) {
 	dim3 block_dims(threads_per_block);
 	int max_blocks = 0;
 	int status = nvshmemx_collective_launch_query_gridsize(kernel, block_dims, args, 0, &max_blocks);
@@ -79,13 +79,20 @@ void worker_kernel_launch(Worker_State *ws, const void *kernel, void **args, u64
 
 	u64 blocks_needed = INT_CEIL(work_count, (u64)threads_per_block);
 	if (blocks_needed == 0) blocks_needed = 1;
-	i32 blocks = blocks_needed > (u64)max_blocks ? max_blocks : (i32)blocks_needed;
+	return blocks_needed > (u64)max_blocks ? max_blocks : (i32)blocks_needed;
+}
+
+i32 worker_kernel_launch(Worker_State *ws, const void *kernel, void **args, u64 work_count, i32 threads_per_block, const char *label) {
+	dim3 block_dims(threads_per_block);
+	i32 blocks = worker_kernel_block_count(ws, kernel, args, work_count, threads_per_block, label);
+	int status = 0;
 	status = nvshmemx_collective_launch(kernel, dim3(blocks), block_dims, args, 0, 0);
 	if (status != 0) {
 		ERROR("NVSHMEM collective launch failed for %s", label);
 		worker_abort(ws, 1);
 	}
 	CHECK_CUDA(cudaDeviceSynchronize());
+	return blocks;
 }
 
 void *_worker_arena_push_array(Worker_State *ws, u64 local_count, u64 elem_size, u64 alignment, u64 *max_count_out) {
