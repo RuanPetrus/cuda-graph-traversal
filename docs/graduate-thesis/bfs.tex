@@ -1,0 +1,432 @@
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{tikz}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\tikzset{
+  vertex/.style={circle, draw, minimum size=8mm, inner sep=0pt},
+  frontier/.style={circle, draw, fill=blue!25, minimum size=8mm, inner sep=0pt},
+  visited/.style={circle, draw, fill=gray!25, minimum size=8mm, inner sep=0pt},
+  undiscovered/.style={circle, draw, fill=white, minimum size=8mm, inner sep=0pt},
+  treeedge/.style={very thick, blue!70!black},
+  graphedge/.style={gray!70}
+}
+
+\begin{document}
+
+\section{Introducao}
+A Busca em Largura, ou \textit{Breadth-First Search} (BFS), e um dos algoritmos fundamentais de travessia de grafo. O algoritimo parte de um vertice inicial, e em seguida vai visitando todos os outros vertices em camadas, comecando com os de distancia um, depois os de distancia dois, e assim sucessivamente. Dessa forma em um grafo nao ponderado, a BFS calcula a menor distancia em numero de arestas entre o vertice inicial e todos os vertices alcansaveis por ele. A Busca em Largura tambem gera uma arvore chamada \textit{Arvore de Busca em Largura} onde o pai de um vertice na arvore, foi o vertice que o descobriu durante a busca.
+
+A implementacao classica eh utilizando uma fila. O vertice inicial eh adicionado na fila e marcado como visitado, e sua distancia e colocada como zero, em seguida. Eh repetido a seguinte operacao enquanto a fila nao esta vazia, eh retirado um vertice $v$ da fila, eh olhado todo vertice $u$ vizinho de $v$, caso $u$ nao tenha visitado, eh calculado sua distancia e $u$ e marcado como visitado eh adicionado a fila.
+
+Uma forma simplificada do algoritmo e apresentada a seguir:
+
+\begin{lstlisting}
+BFS(G, origem):
+	para cada vertice v em G:
+        pai[v] = none
+
+    pai[origem] = origem
+    fila = {origem}
+
+    enquanto fila nao esta vazia:
+		u = proximo elemento da fila
+		para cada vizinho v de u:
+			se pai[v] == none:
+				pai[v] = u
+				adiciona v na fila
+\end{lstlisting}
+
+
+\section{Parelismo em fronteiras}
+O algoritmo da BFS tambem pode ser implementado como uma descoberta de fronteiras. Inicializando-se a primeira fronteira com o vertice inicial, para cada vertice na fronteira eh olhado todos os vizinhos, e os nao visitados sao adicionados na proxima fronteira e assim sucessitivamente. O algoritimo termina quando a fronteira atual esta vazia.
+
+Uma versao simplificado do algoritimo:
+
+\begin{lstlisting}
+BFS(G, origem):
+	para cada vertice v em G:
+        pai[v] = none
+
+    pai[origem] = origem
+    fronteira = {origem}
+
+    enquanto fronteira nao esta vazia:
+        proxima_fronteira = vazia
+		para cada vertice u na fronteria:
+			para cada vizinho v de u:
+				se pai[v] == none:
+                    pai[v] = u
+					adiciona v na proxima_fronteira
+        frontier = next_frontier
+\end{lstlisting}
+
+\subsection{Exemplo Visual de Fronteiras}
+
+Considere o grafo da Figura~\ref{fig:bfs-step0}. A busca comeca no vertice
+\texttt{A}. Em cada passo, os vertices em azul representam a fronteira atual,
+os vertices em cinza ja foram visitados em niveis anteriores, e os vertices em
+branco ainda nao foram descobertos. As arestas destacadas em azul formam a
+arvore de BFS construida ate aquele momento.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[frontier] (A) at (0,0) {A};
+  \node[undiscovered] (B) at (2,1) {B};
+  \node[undiscovered] (C) at (2,-1) {C};
+  \node[undiscovered] (D) at (4,1.5) {D};
+  \node[undiscovered] (E) at (4,0) {E};
+  \node[undiscovered] (F) at (4,-1.5) {F};
+  \node[undiscovered] (G) at (6,0) {G};
+
+  \draw[graphedge] (A) -- (B);
+  \draw[graphedge] (A) -- (C);
+  \draw[graphedge] (B) -- (D);
+  \draw[graphedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[graphedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[graphedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+\end{tikzpicture}
+\caption{Passo 0 da BFS: a fronteira inicial contem apenas a origem \texttt{A}.}
+\label{fig:bfs-step0}
+\end{figure}
+
+No passo inicial, a distancia de \texttt{A} e zero. A primeira expansao examina
+as arestas que saem de \texttt{A}. Como \texttt{B} e \texttt{C} ainda nao foram
+visitados, ambos sao descobertos, recebem distancia um e passam a formar a
+proxima fronteira.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[visited] (A) at (0,0) {A};
+  \node[frontier] (B) at (2,1) {B};
+  \node[frontier] (C) at (2,-1) {C};
+  \node[undiscovered] (D) at (4,1.5) {D};
+  \node[undiscovered] (E) at (4,0) {E};
+  \node[undiscovered] (F) at (4,-1.5) {F};
+  \node[undiscovered] (G) at (6,0) {G};
+
+  \draw[treeedge] (A) -- (B);
+  \draw[treeedge] (A) -- (C);
+  \draw[graphedge] (B) -- (D);
+  \draw[graphedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[graphedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[graphedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+\end{tikzpicture}
+\caption{Passo 1 da BFS: \texttt{B} e \texttt{C} formam a fronteira de nivel 1.}
+\label{fig:bfs-step1}
+\end{figure}
+
+No segundo passo, a BFS expande todos os vertices da fronteira atual. O vertice
+\texttt{B} descobre \texttt{D} e \texttt{E}. O vertice \texttt{C} tambem possui
+uma aresta para \texttt{E}, mas \texttt{E} ja pode ter sido descoberto por
+\texttt{B}; nesse caso, a implementacao mantem apenas um pai para \texttt{E}.
+O vertice \texttt{C} tambem descobre \texttt{F}. Assim, a nova fronteira passa a
+ser formada por \texttt{D}, \texttt{E} e \texttt{F}, todos com distancia dois.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[visited] (A) at (0,0) {A};
+  \node[visited] (B) at (2,1) {B};
+  \node[visited] (C) at (2,-1) {C};
+  \node[frontier] (D) at (4,1.5) {D};
+  \node[frontier] (E) at (4,0) {E};
+  \node[frontier] (F) at (4,-1.5) {F};
+  \node[undiscovered] (G) at (6,0) {G};
+
+  \draw[treeedge] (A) -- (B);
+  \draw[treeedge] (A) -- (C);
+  \draw[treeedge] (B) -- (D);
+  \draw[treeedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[treeedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[graphedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+\end{tikzpicture}
+\caption{Passo 2 da BFS: \texttt{D}, \texttt{E} e \texttt{F} formam a fronteira de nivel 2.}
+\label{fig:bfs-step2}
+\end{figure}
+
+No terceiro passo, a fronteira de nivel dois e expandida. Os vertices
+\texttt{D}, \texttt{E} e \texttt{F} possuem arestas para \texttt{G}. O primeiro
+que conseguir registrar \texttt{G} como descoberto define seu pai na arvore de
+BFS. Na figura, \texttt{E} foi escolhido como pai de \texttt{G}, mas
+\texttt{D} ou \texttt{F} tambem poderiam ser pais validos, pois todos pertencem
+ao nivel anterior.
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[visited] (A) at (0,0) {A};
+  \node[visited] (B) at (2,1) {B};
+  \node[visited] (C) at (2,-1) {C};
+  \node[visited] (D) at (4,1.5) {D};
+  \node[visited] (E) at (4,0) {E};
+  \node[visited] (F) at (4,-1.5) {F};
+  \node[frontier] (G) at (6,0) {G};
+
+  \draw[treeedge] (A) -- (B);
+  \draw[treeedge] (A) -- (C);
+  \draw[treeedge] (B) -- (D);
+  \draw[treeedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[treeedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[treeedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+\end{tikzpicture}
+\caption{Passo 3 da BFS: \texttt{G} e descoberto no nivel 3.}
+\label{fig:bfs-step3}
+\end{figure}
+
+Depois da expansao de \texttt{G}, nenhum novo vertice e encontrado. A proxima
+fronteira fica vazia e o algoritmo termina. O resultado e uma arvore de BFS na
+qual cada vertice alcancavel possui um pai em um nivel imediatamente anterior ao
+seu.
+
+\section{Problemas Reais}
+
+Grafos aparecem naturalmente em problemas reais de grande escala. Em uma rede
+social, vertices podem representar usuarios e arestas podem representar
+amizades, seguidores, mensagens ou interacoes \cite{easleykleinberg}. Na Web,
+paginas sao vertices e hiperlinks sao arestas \cite{brinpage}. Em seguranca
+computacional, grafos podem modelar fluxos de rede, dependencias entre
+processos, tentativas de acesso e relacoes entre entidades suspeitas
+\cite{akoglugraphanomaly}. Em biologia, vertices podem representar proteinas,
+genes ou moléculas, e arestas podem representar interacoes
+\cite{barabasinetworkbiology}. Em todos esses casos, a BFS aparece como uma
+primitiva para calcular alcancabilidade, distancia em numero de arestas e
+expansao de vizinhanca.
+
+A literatura de sistemas de grafos trata a BFS como uma das operacoes centrais
+para avaliar plataformas de processamento de dados irregulares. O Graph500 foi
+proposto para complementar benchmarks numericos tradicionais com uma carga de
+trabalho orientada a dados, motivado pela diferenca entre simulacoes fisicas,
+que tendem a ser estruturadas e intensivas em ponto flutuante, e aplicacoes de
+informatica, que tendem a ser nao estruturadas, orientadas a inteiros e com
+baixa localidade \cite{murphygraph500}. Sua especificacao define a BFS como o
+Kernel 2 do benchmark, executado sobre grafos sinteticos de escala crescente, e
+usa a metrica TEPS, ou arestas atravessadas por segundo, para medir desempenho
+\cite{graph500spec}. Isso mostra que a BFS nao e apenas um exercicio teorico:
+ela e usada como proxy para medir a capacidade de supercomputadores processarem
+analise de grafos massivos.
+
+Em redes sociais, a BFS modela consultas de vizinhanca e distancia social. A
+pergunta ``quais usuarios estao a ate dois ou tres saltos de uma conta?'' e uma
+execucao limitada de BFS. Esse tipo de consulta aparece em recomendacao de
+amizades, propagacao de informacao, deteccao de comunidades locais e analise de
+influencia \cite{easleykleinberg}. Em grafos com bilhoes de relacoes, a
+expansao de poucos niveis pode atingir uma quantidade enorme de vertices,
+especialmente quando existem hubs de grau muito alto. Por isso, mesmo uma BFS
+limitada por profundidade pode exigir processamento paralelo e estruturas de
+dados distribuidas.
+
+Em grafos da Web, a BFS tambem e uma abstracao natural. Um rastreador
+\textit{web crawler} pode iniciar em um conjunto de paginas sementes e expandir
+links por camadas, descobrindo novas paginas a cada nivel \cite{brinpage}. O
+sistema Pregel, do Google, foi proposto para processamento de grafos em larga
+escala e apresenta algoritmos como caminhos minimos, PageRank, propagacao de
+rotulos e outras computacoes iterativas sobre grafos distribuidos \cite{pregel}.
+Embora Pregel seja um modelo mais geral que BFS, sua execucao em superpassos e
+troca de mensagens entre vertices e muito proxima da ideia de fronteiras
+sucessivas usada em BFS distribuida.
+
+Em seguranca, investigacao de fraudes e analise de dependencias, BFS e usada
+para expandir a vizinhanca de uma entidade de interesse. A partir de uma conta,
+um endereco IP, uma maquina infectada ou um processo suspeito, a busca em
+largura identifica entidades conectadas por poucos saltos. Essa forma de
+exploracao e importante porque muitas relacoes relevantes nao aparecem em uma
+aresta direta, mas em cadeias curtas: contas que compartilham dispositivos,
+maquinas que se comunicam com o mesmo servidor, ou processos que dependem dos
+mesmos arquivos \cite{akoglugraphanomaly}. Em grafos corporativos ou de
+telecomunicacoes, essas buscas podem envolver centenas de milhoes de vertices e
+precisam responder em tempo interativo ou quase interativo.
+
+O desafio e que os grafos modernos podem ser massivos e irregulares. Grafos de
+redes sociais e da Web frequentemente possuem distribuicao de grau altamente
+desbalanceada: poucos vertices concentram muitas arestas, enquanto a maioria tem
+grau baixo. Essa propriedade gera duas dificuldades para BFS. Primeiro, ha
+desbalanceamento de trabalho, pois expandir um vertice de alto grau custa muito
+mais do que expandir um vertice comum. Segundo, ha muita contencao, pois muitos
+caminhos podem tentar descobrir o mesmo vertice ao mesmo tempo.
+
+Alem disso, a BFS tem baixa localidade de memoria. Em matrizes densas ou
+vetores, os acessos costumam ser contiguos e previsiveis. Em grafos, ao
+expandir a fronteira, o algoritmo segue listas de adjacencia que podem apontar
+para posicoes distantes e aparentemente aleatorias. Consequentemente, a BFS e
+normalmente limitada por largura de banda, latencia de memoria, atomicos,
+sincronizacao e comunicacao entre maquinas, e nao por operacoes aritmeticas.
+
+Trabalhos em arquiteturas paralelas mostram como essas dificuldades aparecem na
+pratica. Beamer, Asanovic e Patterson propuseram a BFS \textit{direction
+optimizing}, que alterna entre uma expansao top-down, baseada na fronteira
+atual, e uma expansao bottom-up, que examina vertices ainda nao visitados
+procurando vizinhos na fronteira \cite{beamerbfs}. Essa mudanca reduz trabalho
+em grafos de pequeno diametro e grande fronteira, um caso comum em grafos
+sociais e da Web. Merrill, Garland e Grimshaw estudaram BFS em GPU e mostraram
+que a primitiva e representativa de computacoes paralelas com acesso a memoria e
+distribuicao de trabalho irregulares; sua implementacao alcançou bilhoes de
+arestas atravessadas por segundo em uma ou mais GPUs \cite{merrillgpu}.
+
+Portanto, BFS aparece em problemas reais de duas formas complementares. Como
+algoritmo final, ela responde consultas de alcance, distancia e vizinhanca. Como
+primitiva de sistema, ela estressa exatamente os componentes que tornam grafos
+massivos dificeis: memoria irregular, fronteiras dinamicas, atomicos,
+desbalanceamento e comunicacao. Por isso, estudar BFS em GPU e em ambientes
+distribuidos e uma forma direta de estudar o desempenho de analise de grafos em
+escala real.
+
+\section{Motivacao de Paralelismo}
+
+A BFS possui uma oportunidade natural de paralelismo: todos os vertices de uma
+mesma fronteira podem ser processados simultaneamente. Como eles pertencem ao
+mesmo nivel da busca, a expansao de suas arestas pode ocorrer em paralelo desde
+que a implementacao controle corretamente a descoberta de vertices repetidos.
+Se dois ou mais trabalhadores encontram o mesmo vizinho ao mesmo tempo, apenas
+um deles deve registrar esse vertice como descoberto e inseri-lo na proxima
+fronteira.
+
+Essa propriedade torna a BFS adequada para GPUs, que sao projetadas para
+executar milhares de threads leves em paralelo. Em uma GPU, diferentes threads
+podem examinar vertices ou arestas distintas da fronteira. Quando a fronteira e
+grande, o algoritmo pode expor paralelismo suficiente para ocupar muitos
+multiprocessadores da GPU. Como a BFS realiza pouca computacao por aresta, o
+principal ganho esperado vem da capacidade da GPU de sustentar muitas operacoes
+de memoria simultaneas e esconder parte da latencia por meio de concorrencia.
+
+No entanto, paralelizar BFS em GPU nao e trivial. A primeira dificuldade e o
+desbalanceamento de carga. Em grafos com distribuicao de grau irregular, uma
+thread responsavel por um vertice de grau muito alto pode ter muito mais
+trabalho do que outra thread responsavel por um vertice de grau baixo. Por
+isso, implementacoes eficientes geralmente distribuem o trabalho por arestas,
+por grupos de threads ou por blocos, em vez de usar sempre uma thread por
+vertice.
+
+A segunda dificuldade e a construcao da proxima fronteira. Muitos threads podem
+descobrir novos vertices ao mesmo tempo, entao a estrutura que armazena a
+fronteira precisa aceitar insercoes concorrentes. Isso normalmente exige
+operacoes atomicas, como incremento atomico de um contador de tamanho ou
+compare-and-swap no vetor de pais. Essas operacoes garantem corretude, mas
+podem causar contencao quando muitas threads tentam atualizar a mesma regiao de
+memoria.
+
+A terceira dificuldade aparece em ambientes distribuidos. Quando o grafo nao
+cabe em uma unica GPU, vertices e arestas precisam ser particionados entre
+varios processos ou dispositivos. Durante a expansao da fronteira, uma aresta
+pode apontar para um vertice pertencente a outro processo. Nesse caso, a
+descoberta precisa ser comunicada ao proprietario do vertice remoto. Como o
+padrao de comunicacao depende dos dados do grafo e muda a cada nivel da BFS,
+essa comunicacao e irregular e dificil de otimizar com mensagens grandes e
+previsiveis.
+
+Portanto, a motivacao para usar paralelismo em GPU e dupla. Primeiro, a BFS
+precisa de alto paralelismo para processar grandes volumes de arestas em tempo
+razoavel. Segundo, sistemas modernos de GPU oferecem alta largura de banda de
+memoria e interconexoes rapidas entre dispositivos, caracteristicas importantes
+para algoritmos de grafos massivos. O desafio de pesquisa e organizar o trabalho
+e a comunicacao de forma alinhada ao hardware.
+
+\section{Implementacao GPU side em NVSHMEM}
+
+NVSHMEM e uma biblioteca de comunicacao para GPUs baseada no modelo de espaco
+de enderecamento global particionado. Nesse modelo, cada elemento de
+processamento, ou PE, possui sua memoria local, mas tambem pode acessar regioes
+simetricas de memoria de outros PEs por meio de operacoes de comunicacao
+unilaterais. A diferenca importante para este trabalho e que essas operacoes
+podem ser chamadas diretamente de kernels CUDA, isto e, pelo proprio codigo que
+esta executando na GPU.
+
+Em uma BFS distribuida, essa capacidade e relevante porque a comunicacao remota
+e descoberta dinamicamente. Ao processar uma aresta \texttt{(u, v)}, uma thread
+da GPU pode determinar que \texttt{v} pertence a outro PE. Com NVSHMEM, essa
+thread pode tentar atualizar diretamente o estado remoto de \texttt{v}, sem
+precisar retornar ao CPU para empacotar uma mensagem MPI naquele momento. Isso
+reduz a dependencia de comunicacao mediada pelo host e aproxima o mecanismo de
+comunicacao do ponto onde a informacao e produzida.
+
+Uma estrategia comum e particionar os vertices de forma ciclica entre os PEs. O
+proprietario de um vertice \texttt{v} pode ser calculado como \texttt{v \%
+num\_pes}, e o indice local como \texttt{v / num\_pes}. Assim, qualquer thread
+consegue descobrir rapidamente qual PE e responsavel por armazenar o estado de
+um vertice. O vetor de pais, o vetor de distancias e as estruturas de fronteira
+podem ser alocados em memoria simetrica, permitindo atualizacoes locais ou
+remotas por NVSHMEM.
+
+O passo principal da BFS em GPU consiste em expandir a fronteira atual. Cada
+thread examina uma parte das arestas dos vertices ativos. Para cada vizinho, a
+thread verifica se ele ainda nao foi descoberto. Em uma implementacao
+concorrente, essa verificacao precisa ser atomica. Um compare-and-swap sobre o
+vetor de pais pode trocar o valor inicial, por exemplo \texttt{-1}, pelo pai
+que descobriu o vertice. Se a troca for bem-sucedida, a thread sabe que foi a
+primeira a descobrir aquele vertice e pode inserir o vizinho na proxima
+fronteira.
+
+Quando o vizinho pertence ao mesmo PE, a operacao atomica pode ser local.
+Quando pertence a outro PE, a mesma ideia pode ser expressa como uma operacao
+atomica remota em NVSHMEM. A operacao remota tenta reivindicar o vertice no PE
+proprietario. Esse padrao e adequado para BFS porque a competicao entre varias
+descobertas do mesmo vertice e uma corrida benigna: nao e necessario que o
+primeiro thread em tempo real seja o pai definitivo, apenas que o pai escolhido
+esteja no nivel anterior e que a arvore resultante seja valida.
+
+Um esboco de expansao de fronteira com comunicacao do lado da GPU e mostrado a
+seguir:
+
+\begin{lstlisting}
+for each active vertex u in current_frontier, in parallel:
+    for each neighbor v of u:
+        owner = v % num_pes
+        local_index = v / num_pes
+
+        old = atomic_compare_and_swap(parent[owner][local_index], -1, u)
+        if old == -1:
+            insert v into next_frontier of owner
+\end{lstlisting}
+
+Na pratica, a implementacao precisa tratar detalhes adicionais. A insercao na
+proxima fronteira pode exigir contadores atomicos locais ou remotos. Tambem e
+necessario sincronizar os PEs entre niveis para garantir que todas as
+descobertas do nivel atual foram completadas antes do inicio do proximo nivel.
+Ao final, a BFS termina quando todas as fronteiras locais estao vazias e nenhum
+PE possui trabalho pendente.
+
+O uso de NVSHMEM se alinha bem ao comportamento irregular da BFS. Em vez de
+forcar a GPU a acumular descobertas, sincronizar com o CPU e entao realizar uma
+troca de mensagens, a propria thread que encontra uma aresta remota pode emitir
+a atualizacao. Esse modelo nao elimina os custos de comunicacao, atomicos e
+sincronizacao, mas reduz a distancia entre computacao e comunicacao. Para
+grafos massivos, onde a quantidade de arestas visitadas e grande e o padrao de
+destinos e imprevisivel, essa aproximacao pode melhorar a escalabilidade e a
+utilizacao do hardware.
+
+No contexto desta tese, a BFS em NVSHMEM representa uma abordagem
+\textit{GPU-side}: o CPU continua importante para inicializacao, lancamento dos
+processos, configuracao MPI/NVSHMEM e validacao, mas o laco principal de
+traversal e comunicacao fina ocorre dentro da GPU. Essa separacao permite usar
+MPI para coordenacao global e NVSHMEM para atualizacoes remotas de baixa
+granularidade, combinando dois modelos de programacao adequados a camadas
+diferentes do sistema.
+
+\bibliographystyle{plain}
+\bibliography{bibliografia}
+
+\end{document}
