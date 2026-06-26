@@ -48,6 +48,97 @@ BFS(G, origem):
 				adiciona v na fila
 \end{lstlisting}
 
+\section{Problemas Reais}
+
+Grafos aparecem naturalmente em problemas reais de grande escala. Em uma rede
+social, vertices podem representar usuarios e arestas podem representar
+amizades, seguidores, mensagens ou interacoes \cite{easleykleinberg}. Na Web,
+paginas sao vertices e hiperlinks sao arestas \cite{brinpage}. Em seguranca
+computacional, grafos podem modelar fluxos de rede, dependencias entre
+processos, tentativas de acesso e relacoes entre entidades suspeitas
+\cite{akoglugraphanomaly}. Em biologia, vertices podem representar proteinas,
+genes ou moléculas, e arestas podem representar interacoes
+\cite{barabasinetworkbiology}. Em todos esses casos, a BFS aparece como uma
+primitiva para calcular alcancabilidade, distancia em numero de arestas e
+expansao de vizinhanca.
+
+A literatura de sistemas de grafos trata a BFS como uma das operacoes centrais
+para avaliar plataformas de processamento de dados irregulares. O Graph500 foi
+proposto para complementar benchmarks numericos tradicionais com uma carga de
+trabalho orientada a dados, motivado pela diferenca entre simulacoes fisicas,
+que tendem a ser estruturadas e intensivas em ponto flutuante, e aplicacoes de
+informatica, que tendem a ser nao estruturadas, orientadas a inteiros e com
+baixa localidade \cite{murphygraph500}. Sua especificacao define a BFS como o
+Kernel 2 do benchmark, executado sobre grafos sinteticos de escala crescente, e
+usa a metrica TEPS, ou arestas atravessadas por segundo, para medir desempenho
+\cite{graph500spec}. Isso mostra que a BFS nao e apenas um exercicio teorico:
+ela e usada como proxy para medir a capacidade de supercomputadores processarem
+analise de grafos massivos.
+
+Em redes sociais, a BFS modela consultas de vizinhanca e distancia social. A
+pergunta ``quais usuarios estao a ate dois ou tres saltos de uma conta?'' e uma
+execucao limitada de BFS. Esse tipo de consulta aparece em recomendacao de
+amizades, propagacao de informacao, deteccao de comunidades locais e analise de
+influencia \cite{easleykleinberg}. Em grafos com bilhoes de relacoes, a
+expansao de poucos niveis pode atingir uma quantidade enorme de vertices,
+especialmente quando existem hubs de grau muito alto. Por isso, mesmo uma BFS
+limitada por profundidade pode exigir processamento paralelo e estruturas de
+dados distribuidas.
+
+Em grafos da Web, a BFS tambem e uma abstracao natural. Um rastreador
+\textit{web crawler} pode iniciar em um conjunto de paginas sementes e expandir
+links por camadas, descobrindo novas paginas a cada nivel \cite{brinpage}. O
+sistema Pregel, do Google, foi proposto para processamento de grafos em larga
+escala e apresenta algoritmos como caminhos minimos, PageRank, propagacao de
+rotulos e outras computacoes iterativas sobre grafos distribuidos \cite{pregel}.
+Embora Pregel seja um modelo mais geral que BFS, sua execucao em superpassos e
+troca de mensagens entre vertices e muito proxima da ideia de fronteiras
+sucessivas usada em BFS distribuida.
+
+Em seguranca, investigacao de fraudes e analise de dependencias, BFS e usada
+para expandir a vizinhanca de uma entidade de interesse. A partir de uma conta,
+um endereco IP, uma maquina infectada ou um processo suspeito, a busca em
+largura identifica entidades conectadas por poucos saltos. Essa forma de
+exploracao e importante porque muitas relacoes relevantes nao aparecem em uma
+aresta direta, mas em cadeias curtas: contas que compartilham dispositivos,
+maquinas que se comunicam com o mesmo servidor, ou processos que dependem dos
+mesmos arquivos \cite{akoglugraphanomaly}. Em grafos corporativos ou de
+telecomunicacoes, essas buscas podem envolver centenas de milhoes de vertices e
+precisam responder em tempo interativo ou quase interativo.
+
+O desafio e que os grafos modernos podem ser massivos e irregulares. Grafos de
+redes sociais e da Web frequentemente possuem distribuicao de grau altamente
+desbalanceada: poucos vertices concentram muitas arestas, enquanto a maioria tem
+grau baixo. Essa propriedade gera duas dificuldades para BFS. Primeiro, ha
+desbalanceamento de trabalho, pois expandir um vertice de alto grau custa muito
+mais do que expandir um vertice comum. Segundo, ha muita contencao, pois muitos
+caminhos podem tentar descobrir o mesmo vertice ao mesmo tempo.
+
+Alem disso, a BFS tem baixa localidade de memoria. Em matrizes densas ou
+vetores, os acessos costumam ser contiguos e previsiveis. Em grafos, ao
+expandir a fronteira, o algoritmo segue listas de adjacencia que podem apontar
+para posicoes distantes e aparentemente aleatorias. Consequentemente, a BFS e
+normalmente limitada por largura de banda, latencia de memoria, atomicos,
+sincronizacao e comunicacao entre maquinas, e nao por operacoes aritmeticas.
+
+Trabalhos em arquiteturas paralelas mostram como essas dificuldades aparecem na
+pratica. Beamer, Asanovic e Patterson propuseram a BFS \textit{direction
+optimizing}, que alterna entre uma expansao top-down, baseada na fronteira
+atual, e uma expansao bottom-up, que examina vertices ainda nao visitados
+procurando vizinhos na fronteira \cite{beamerbfs}. Essa mudanca reduz trabalho
+em grafos de pequeno diametro e grande fronteira, um caso comum em grafos
+sociais e da Web. Merrill, Garland e Grimshaw estudaram BFS em GPU e mostraram
+que a primitiva e representativa de computacoes paralelas com acesso a memoria e
+distribuicao de trabalho irregulares; sua implementacao alcançou bilhoes de
+arestas atravessadas por segundo em uma ou mais GPUs \cite{merrillgpu}.
+
+Portanto, BFS aparece em problemas reais de duas formas complementares. Como
+algoritmo final, ela responde consultas de alcance, distancia e vizinhanca. Como
+primitiva de sistema, ela estressa exatamente os componentes que tornam grafos
+massivos dificeis: memoria irregular, fronteiras dinamicas, atomicos,
+desbalanceamento e comunicacao. Por isso, estudar BFS em GPU e em ambientes
+distribuidos e uma forma direta de estudar o desempenho de analise de grafos em
+escala real.
 
 \section{BFS em Fronteiras}
 O algoritmo de BFS também pode ser implementado como uma descoberta por fronteiras. Inicializa-se a primeira fronteira com o vértice inicial. Em seguida, para cada vértice presente na fronteira atual, examinam-se todos os seus vizinhos; aqueles que ainda não foram visitados são adicionados à próxima fronteira. Esse processo se repete sucessivamente, até que a fronteira atual esteja vazia.
@@ -217,21 +308,37 @@ fronteira fica vazia e o algoritmo termina. O resultado e uma arvore de BFS na
 qual cada vertice alcancavel possui um pai em um nivel imediatamente anterior ao
 seu.
 
-\section{Divisão do Grafo entre Workers}
+\section{Motivacao de Paralelismo}
+A BFS baseada em fronteiras oferece uma oportunidade natural de paralelismo, todos
+os vertices de uma mesma fronteira podem ser processados simultaneamente, e suas
+arestas podem ser expandidas em paralelo. O principal cuidado e controlar a
+descoberta dos vertices da proxima fronteira, pois multiplas arestas podem tentar
+descobrir o mesmo vertice ao mesmo tempo. Estrategias de paralelismo e controle foram
+discultidas em \cite{merrillgpu}. 
+
+\subsection{Divisão do Grafo entre Workers}
+Neste texto, o termo \textit{worker} e usado de forma geral para representar uma
+unidade de execucao capaz de armazenar parte do grafo e realizar parte do trabalho
+da BFS. Um worker pode corresponder, por exemplo, a um processo, uma maquina, uma
+GPU, uma CPU ou outro recurso de execucao paralelo. Os detalhes de como esses
+workers sao implementados serao discutidos posteriormente. Essa abstracao e
+comum em sistemas de processamento paralelo de grafos, nos quais a computacao e
+dividida entre unidades que armazenam partes do grafo e trocam informacoes sobre
+vertices descobertos durante a execucao \cite{merrillgpu}.
 
 Em uma implementação paralela ou distribuída, o grafo não precisa ficar inteiro
-em um único processo. Uma estratégia comum é dividir seus vértices entre vários
+em uma única unidade de execução. Uma estratégia comum é dividir seus vértices entre vários
 \textit{workers}. Cada worker fica responsável por armazenar e processar uma
 parte dos vértices e de suas listas de adjacência. Durante a BFS, quando um
 worker expande um vértice local, ele examina suas arestas; se o vizinho pertence
 a outro worker, a descoberta desse vizinho precisa ser comunicada ao worker que
-o possui.
+o possui \cite{merrillgpu}.
 
-Uma forma simples de particionamento é a distribuição cíclica. Com quatro
+Uma forma simples de particionamento é a distribuição cíclica. Com $n_workers$
 workers, o dono de um vértice pode ser calculado por:
 
 \begin{lstlisting}
-worker(v) = v mod 4
+worker(v) = v mod n_workers
 \end{lstlisting}
 
 Assim, os vértices são distribuídos de maneira alternada entre os workers. Essa
@@ -359,7 +466,6 @@ pertence a outro worker.
 \end{figure}
 
 \subsection{Exemplo de BFS Paralela com 4 Workers}
-
 Considere uma BFS iniciada no vértice 0 do grafo particionado da
 Figura~\ref{fig:grafo-particionado-workers}. No passo inicial, apenas o worker 0
 possui trabalho, pois ele é o dono do vértice 0. Ao expandir 0, são descobertos
@@ -465,8 +571,9 @@ vértice 1 passa a compor a fronteira local do worker 1.
 \end{figure}
 
 No passo 1, os workers 0 e 1 trabalham ao mesmo tempo: 4 descobre 8 e 9,
-enquanto 1 descobre 2, 5 e 6. No passo 2, já há trabalho em três workers
-diferentes.
+enquanto 1 descobre 2, 5 e 6. O vértice 5 também é vizinho de 4, mas basta que
+uma das tentativas de descoberta seja aceita para que ele entre na próxima
+fronteira. No passo 2, já há trabalho em três workers diferentes.
 
 \begin{figure}[H]
 \centering
@@ -529,6 +636,7 @@ diferentes.
   \draw[graphedge] (w3v11) -- (w3v15);
   \draw[graphedge, dashed] (w3g2) -- (w3v3);
   \draw[graphedge, dashed] (w3g6) -- (w3v7);
+  \draw[graphedge, dashed] (w3g6) -- (w3v11);
   \node[anchor=west] at (6.2,-5.85) {Fronteira local: vazia};
 \end{tikzpicture}
 \caption{Passo 2 da BFS paralela: a fronteira global está distribuída entre os workers 0, 1 e 2. Vértices tracejados representam vizinhos remotos mantidos apenas para ilustrar comunicações entre workers.}
@@ -536,8 +644,8 @@ diferentes.
 \end{figure}
 
 No passo 2, a expansão dos vértices 2 e 6 no worker 2 gera trabalho para o
-worker 3, pois existem arestas para os vértices 3 e 7. Ao mesmo tempo, os workers
-0, 1 e 2 descobrem outros vértices locais, formando a próxima fronteira.
+worker 3, pois existem arestas para os vértices 3, 7 e 11. Ao mesmo tempo, os
+workers 0, 1 e 2 descobrem outros vértices locais, formando a próxima fronteira.
 
 \begin{figure}[H]
 \centering
@@ -570,9 +678,9 @@ worker 3, pois existem arestas para os vértices 3 e 7. Ao mesmo tempo, os worke
   \node[anchor=west] at (6.2,-2.35) {Worker 3};
   \node[frontier] at (6.8,-3.4) {3};
   \node[frontier] at (8.8,-3.4) {7};
-  \node[undiscovered] at (6.8,-4.9) {11};
+  \node[frontier] at (6.8,-4.9) {11};
   \node[undiscovered] at (8.8,-4.9) {15};
-  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{3, 7\}};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{3, 7, 11\}};
 \end{tikzpicture}
 \caption{Passo 3 da BFS paralela: todos os workers possuem vértices na fronteira.}
 \label{fig:bfs-paralela-step3}
@@ -611,16 +719,16 @@ Após o passo 3, apenas os workers 2 e 3 continuam com novos vértices a expandi
   \node[anchor=west] at (6.2,-2.35) {Worker 3};
   \node[visited] at (6.8,-3.4) {3};
   \node[visited] at (8.8,-3.4) {7};
-  \node[frontier] at (6.8,-4.9) {11};
-  \node[undiscovered] at (8.8,-4.9) {15};
-  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{11\}};
+  \node[visited] at (6.8,-4.9) {11};
+  \node[frontier] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{15\}};
 \end{tikzpicture}
 \caption{Passo 4 da BFS paralela: apenas os workers 2 e 3 continuam com fronteiras locais.}
 \label{fig:bfs-paralela-step4}
 \end{figure}
 
-Por fim, a expansão de 11 ou 14 descobre 15, que pertence ao worker 3. Depois de
-expandir 15, nenhuma nova descoberta é produzida e a BFS termina.
+Por fim, a expansão de 14 e 15 não produz novas descobertas. Nesse ponto, a
+próxima fronteira fica vazia e a BFS termina.
 
 \begin{figure}[H]
 \centering
@@ -654,10 +762,10 @@ expandir 15, nenhuma nova descoberta é produzida e a BFS termina.
   \node[visited] at (6.8,-3.4) {3};
   \node[visited] at (8.8,-3.4) {7};
   \node[visited] at (6.8,-4.9) {11};
-  \node[frontier] at (8.8,-4.9) {15};
-  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{15\}};
+  \node[visited] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: vazia};
 \end{tikzpicture}
-\caption{Passo 5 da BFS paralela: o último vértice da fronteira está no worker 3.}
+\caption{Passo 5 da BFS paralela: a fronteira global fica vazia e a busca termina.}
 \label{fig:bfs-paralela-step5}
 \end{figure}
 
@@ -665,230 +773,61 @@ Essa sequência visual mostra que a fronteira global da BFS é a união das
 fronteiras locais de cada worker. Em uma implementação paralela, cada worker
 expande apenas os vértices da sua fronteira local. Quando uma aresta aponta para
 um vértice remoto, a atualização precisa ser enviada ao worker dono daquele
-vértice, que poderá processá-lo no próximo passo.
+vértice, que poderá processá-lo no próximo passo. Essa organização preserva a
+ideia de avanço por níveis da BFS, mas distribui o trabalho e a comunicação entre
+as unidades de execução disponíveis.
 
-\section{Problemas Reais}
+\section{BFS em GPU}
+GPUs modernas sao otimizadas para executar operacoes computacionalmente intensivas 
+com muitos grupos de threads em paralelo e dependem de concorrencia para esconder 
+atrasos de memoria. No modelo da NVIDIA, threads sao agrupadas em \textit{warps}, 
+que executam uma mesma instrucao sobre dados diferentes, e em blocos de threads, 
+que podem compartilhar memoria local no multiprocessador. Esse modelo favorece 
+cargas de trabalho com grande quantidade de operacoes independentes e com acesso 
+a memoria bem organizado \cite{merrillgpu}.
 
-Grafos aparecem naturalmente em problemas reais de grande escala. Em uma rede
-social, vertices podem representar usuarios e arestas podem representar
-amizades, seguidores, mensagens ou interacoes \cite{easleykleinberg}. Na Web,
-paginas sao vertices e hiperlinks sao arestas \cite{brinpage}. Em seguranca
-computacional, grafos podem modelar fluxos de rede, dependencias entre
-processos, tentativas de acesso e relacoes entre entidades suspeitas
-\cite{akoglugraphanomaly}. Em biologia, vertices podem representar proteinas,
-genes ou moléculas, e arestas podem representar interacoes
-\cite{barabasinetworkbiology}. Em todos esses casos, a BFS aparece como uma
-primitiva para calcular alcancabilidade, distancia em numero de arestas e
-expansao de vizinhanca.
+A BFS e atraente para GPUs porque a expansao de uma fronteira pode expor muito
+paralelismo. Em uma mesma iteracao, varios vertices da fronteira atual podem ser
+expandidos simultaneamente, e as arestas incidentes a esses vertices tambem podem
+ser examinadas em paralelo. Quando a fronteira e grande, ha trabalho suficiente
+para ocupar muitos multiprocessadores. Alem disso, a BFS executa pouca computacao
+aritmetica por aresta; portanto, seu desempenho depende principalmente de largura
+de banda, latencia de memoria, controle de concorrencia e eficiencia na
+organizacao das fronteiras \cite{merrillgpu}.
 
-A literatura de sistemas de grafos trata a BFS como uma das operacoes centrais
-para avaliar plataformas de processamento de dados irregulares. O Graph500 foi
-proposto para complementar benchmarks numericos tradicionais com uma carga de
-trabalho orientada a dados, motivado pela diferenca entre simulacoes fisicas,
-que tendem a ser estruturadas e intensivas em ponto flutuante, e aplicacoes de
-informatica, que tendem a ser nao estruturadas, orientadas a inteiros e com
-baixa localidade \cite{murphygraph500}. Sua especificacao define a BFS como o
-Kernel 2 do benchmark, executado sobre grafos sinteticos de escala crescente, e
-usa a metrica TEPS, ou arestas atravessadas por segundo, para medir desempenho
-\cite{graph500spec}. Isso mostra que a BFS nao e apenas um exercicio teorico:
-ela e usada como proxy para medir a capacidade de supercomputadores processarem
-analise de grafos massivos.
+Apesar disso, grafos esparsos tornam a BFS dificil em GPU. O padrao de acesso a
+memoria depende da estrutura do grafo, nao de um arranjo regular como em vetores
+ou matrizes densas. Ao expandir um vertice, as threads seguem listas de
+adjacencia que podem apontar para regioes distantes da memoria. Alem disso, grafos
+reais frequentemente possuem distribuicao de grau irregular, alguns vertices tem
+poucos vizinhos, enquanto outros concentram muitos. Se uma thread ou um warp recebe 
+um vertice de grau muito maior que os demais, ocorre desbalanceamento de carga e 
+parte da GPU pode ficar subutilizada \cite{merrillgpu}.
 
-Em redes sociais, a BFS modela consultas de vizinhanca e distancia social. A
-pergunta ``quais usuarios estao a ate dois ou tres saltos de uma conta?'' e uma
-execucao limitada de BFS. Esse tipo de consulta aparece em recomendacao de
-amizades, propagacao de informacao, deteccao de comunidades locais e analise de
-influencia \cite{easleykleinberg}. Em grafos com bilhoes de relacoes, a
-expansao de poucos niveis pode atingir uma quantidade enorme de vertices,
-especialmente quando existem hubs de grau muito alto. Por isso, mesmo uma BFS
-limitada por profundidade pode exigir processamento paralelo e estruturas de
-dados distribuidas.
+Uma forma simples de paralelizar BFS e fazer cada iteracao inspecionar todos os 
+vertices ou todas as arestas do grafo, procurando quais deles pertencem ao nivel atual. 
+Essa estrategia se ajusta facilmente ao modelo de dados paralelos da GPU, mas pode
+executar trabalho quadratico no pior caso, pois o mesmo grafo e varrido repetidas
+vezes ao longo dos niveis da busca. Para grafos com diametro nao trivial, esse
+custo se torna alto. Uma implementacao eficiente deve examinar apenas os vertices
+e arestas que pertencem as fronteiras ativas de cada iteracao, mantendo custo
+linear em relacao ao numero de vertices e arestas, isto e, $O(|V| + |E|)$
+\cite{merrillgpu}.
 
-Em grafos da Web, a BFS tambem e uma abstracao natural. Um rastreador
-\textit{web crawler} pode iniciar em um conjunto de paginas sementes e expandir
-links por camadas, descobrindo novas paginas a cada nivel \cite{brinpage}. O
-sistema Pregel, do Google, foi proposto para processamento de grafos em larga
-escala e apresenta algoritmos como caminhos minimos, PageRank, propagacao de
-rotulos e outras computacoes iterativas sobre grafos distribuidos \cite{pregel}.
-Embora Pregel seja um modelo mais geral que BFS, sua execucao em superpassos e
-troca de mensagens entre vertices e muito proxima da ideia de fronteiras
-sucessivas usada em BFS distribuida.
+No ponto de vista de desempenho, permitir muitas descobertas duplicadas de um mesmo 
+vertice pode gerar trabalho redundante, pois o mesmo vertice pode ser inserido mais 
+de uma vez na fronteira e sua lista de adjacencia pode ser expandida repetidamente. 
+Por isso, implementacoes em GPU costumam usar mecanismos de filtragem, marcacao e 
+remocao local de duplicatas para reduzir esse efeito \cite{merrillgpu}.
 
-Em seguranca, investigacao de fraudes e analise de dependencias, BFS e usada
-para expandir a vizinhanca de uma entidade de interesse. A partir de uma conta,
-um endereco IP, uma maquina infectada ou um processo suspeito, a busca em
-largura identifica entidades conectadas por poucos saltos. Essa forma de
-exploracao e importante porque muitas relacoes relevantes nao aparecem em uma
-aresta direta, mas em cadeias curtas: contas que compartilham dispositivos,
-maquinas que se comunicam com o mesmo servidor, ou processos que dependem dos
-mesmos arquivos \cite{akoglugraphanomaly}. Em grafos corporativos ou de
-telecomunicacoes, essas buscas podem envolver centenas de milhoes de vertices e
-precisam responder em tempo interativo ou quase interativo.
-
-O desafio e que os grafos modernos podem ser massivos e irregulares. Grafos de
-redes sociais e da Web frequentemente possuem distribuicao de grau altamente
-desbalanceada: poucos vertices concentram muitas arestas, enquanto a maioria tem
-grau baixo. Essa propriedade gera duas dificuldades para BFS. Primeiro, ha
-desbalanceamento de trabalho, pois expandir um vertice de alto grau custa muito
-mais do que expandir um vertice comum. Segundo, ha muita contencao, pois muitos
-caminhos podem tentar descobrir o mesmo vertice ao mesmo tempo.
-
-Alem disso, a BFS tem baixa localidade de memoria. Em matrizes densas ou
-vetores, os acessos costumam ser contiguos e previsiveis. Em grafos, ao
-expandir a fronteira, o algoritmo segue listas de adjacencia que podem apontar
-para posicoes distantes e aparentemente aleatorias. Consequentemente, a BFS e
-normalmente limitada por largura de banda, latencia de memoria, atomicos,
-sincronizacao e comunicacao entre maquinas, e nao por operacoes aritmeticas.
-
-Trabalhos em arquiteturas paralelas mostram como essas dificuldades aparecem na
-pratica. Beamer, Asanovic e Patterson propuseram a BFS \textit{direction
-optimizing}, que alterna entre uma expansao top-down, baseada na fronteira
-atual, e uma expansao bottom-up, que examina vertices ainda nao visitados
-procurando vizinhos na fronteira \cite{beamerbfs}. Essa mudanca reduz trabalho
-em grafos de pequeno diametro e grande fronteira, um caso comum em grafos
-sociais e da Web. Merrill, Garland e Grimshaw estudaram BFS em GPU e mostraram
-que a primitiva e representativa de computacoes paralelas com acesso a memoria e
-distribuicao de trabalho irregulares; sua implementacao alcançou bilhoes de
-arestas atravessadas por segundo em uma ou mais GPUs \cite{merrillgpu}.
-
-Portanto, BFS aparece em problemas reais de duas formas complementares. Como
-algoritmo final, ela responde consultas de alcance, distancia e vizinhanca. Como
-primitiva de sistema, ela estressa exatamente os componentes que tornam grafos
-massivos dificeis: memoria irregular, fronteiras dinamicas, atomicos,
-desbalanceamento e comunicacao. Por isso, estudar BFS em GPU e em ambientes
-distribuidos e uma forma direta de estudar o desempenho de analise de grafos em
-escala real.
-
-\section{Motivacao de Paralelismo}
-
-A BFS possui uma oportunidade natural de paralelismo: todos os vertices de uma
-mesma fronteira podem ser processados simultaneamente. Como eles pertencem ao
-mesmo nivel da busca, a expansao de suas arestas pode ocorrer em paralelo desde
-que a implementacao controle corretamente a descoberta de vertices repetidos.
-Se dois ou mais trabalhadores encontram o mesmo vizinho ao mesmo tempo, apenas
-um deles deve registrar esse vertice como descoberto e inseri-lo na proxima
-fronteira.
-
-Essa propriedade torna a BFS adequada para GPUs, que sao projetadas para
-executar milhares de threads leves em paralelo. Em uma GPU, diferentes threads
-podem examinar vertices ou arestas distintas da fronteira. Quando a fronteira e
-grande, o algoritmo pode expor paralelismo suficiente para ocupar muitos
-multiprocessadores da GPU. Como a BFS realiza pouca computacao por aresta, o
-principal ganho esperado vem da capacidade da GPU de sustentar muitas operacoes
-de memoria simultaneas e esconder parte da latencia por meio de concorrencia.
-
-No entanto, paralelizar BFS em GPU nao e trivial. A primeira dificuldade e o
-desbalanceamento de carga. Em grafos com distribuicao de grau irregular, uma
-thread responsavel por um vertice de grau muito alto pode ter muito mais
-trabalho do que outra thread responsavel por um vertice de grau baixo. Por
-isso, implementacoes eficientes geralmente distribuem o trabalho por arestas,
-por grupos de threads ou por blocos, em vez de usar sempre uma thread por
-vertice.
-
-A segunda dificuldade e a construcao da proxima fronteira. Muitos threads podem
-descobrir novos vertices ao mesmo tempo, entao a estrutura que armazena a
-fronteira precisa aceitar insercoes concorrentes. Isso normalmente exige
-operacoes atomicas, como incremento atomico de um contador de tamanho ou
-compare-and-swap no vetor de pais. Essas operacoes garantem corretude, mas
-podem causar contencao quando muitas threads tentam atualizar a mesma regiao de
-memoria.
-
-A terceira dificuldade aparece em ambientes distribuidos. Quando o grafo nao
-cabe em uma unica GPU, vertices e arestas precisam ser particionados entre
-varios processos ou dispositivos. Durante a expansao da fronteira, uma aresta
-pode apontar para um vertice pertencente a outro processo. Nesse caso, a
-descoberta precisa ser comunicada ao proprietario do vertice remoto. Como o
-padrao de comunicacao depende dos dados do grafo e muda a cada nivel da BFS,
-essa comunicacao e irregular e dificil de otimizar com mensagens grandes e
-previsiveis.
-
-Portanto, a motivacao para usar paralelismo em GPU e dupla. Primeiro, a BFS
-precisa de alto paralelismo para processar grandes volumes de arestas em tempo
-razoavel. Segundo, sistemas modernos de GPU oferecem alta largura de banda de
-memoria e interconexoes rapidas entre dispositivos, caracteristicas importantes
-para algoritmos de grafos massivos. O desafio de pesquisa e organizar o trabalho
-e a comunicacao de forma alinhada ao hardware.
-
-\section{Implementacao GPU side em NVSHMEM}
-
-NVSHMEM e uma biblioteca de comunicacao para GPUs baseada no modelo de espaco
-de enderecamento global particionado. Nesse modelo, cada elemento de
-processamento, ou PE, possui sua memoria local, mas tambem pode acessar regioes
-simetricas de memoria de outros PEs por meio de operacoes de comunicacao
-unilaterais. A diferenca importante para este trabalho e que essas operacoes
-podem ser chamadas diretamente de kernels CUDA, isto e, pelo proprio codigo que
-esta executando na GPU.
-
-Em uma BFS distribuida, essa capacidade e relevante porque a comunicacao remota
-e descoberta dinamicamente. Ao processar uma aresta \texttt{(u, v)}, uma thread
-da GPU pode determinar que \texttt{v} pertence a outro PE. Com NVSHMEM, essa
-thread pode tentar atualizar diretamente o estado remoto de \texttt{v}, sem
-precisar retornar ao CPU para empacotar uma mensagem MPI naquele momento. Isso
-reduz a dependencia de comunicacao mediada pelo host e aproxima o mecanismo de
-comunicacao do ponto onde a informacao e produzida.
-
-Uma estrategia comum e particionar os vertices de forma ciclica entre os PEs. O
-proprietario de um vertice \texttt{v} pode ser calculado como \texttt{v \%
-num\_pes}, e o indice local como \texttt{v / num\_pes}. Assim, qualquer thread
-consegue descobrir rapidamente qual PE e responsavel por armazenar o estado de
-um vertice. O vetor de pais, o vetor de distancias e as estruturas de fronteira
-podem ser alocados em memoria simetrica, permitindo atualizacoes locais ou
-remotas por NVSHMEM.
-
-O passo principal da BFS em GPU consiste em expandir a fronteira atual. Cada
-thread examina uma parte das arestas dos vertices ativos. Para cada vizinho, a
-thread verifica se ele ainda nao foi descoberto. Em uma implementacao
-concorrente, essa verificacao precisa ser atomica. Um compare-and-swap sobre o
-vetor de pais pode trocar o valor inicial, por exemplo \texttt{-1}, pelo pai
-que descobriu o vertice. Se a troca for bem-sucedida, a thread sabe que foi a
-primeira a descobrir aquele vertice e pode inserir o vizinho na proxima
-fronteira.
-
-Quando o vizinho pertence ao mesmo PE, a operacao atomica pode ser local.
-Quando pertence a outro PE, a mesma ideia pode ser expressa como uma operacao
-atomica remota em NVSHMEM. A operacao remota tenta reivindicar o vertice no PE
-proprietario. Esse padrao e adequado para BFS porque a competicao entre varias
-descobertas do mesmo vertice e uma corrida benigna: nao e necessario que o
-primeiro thread em tempo real seja o pai definitivo, apenas que o pai escolhido
-esteja no nivel anterior e que a arvore resultante seja valida.
-
-Um esboco de expansao de fronteira com comunicacao do lado da GPU e mostrado a
-seguir:
-
-\begin{lstlisting}
-for each active vertex u in current_frontier, in parallel:
-    for each neighbor v of u:
-        owner = v % num_pes
-        local_index = v / num_pes
-
-        old = atomic_compare_and_swap(parent[owner][local_index], -1, u)
-        if old == -1:
-            insert v into next_frontier of owner
-\end{lstlisting}
-
-Na pratica, a implementacao precisa tratar detalhes adicionais. A insercao na
-proxima fronteira pode exigir contadores atomicos locais ou remotos. Tambem e
-necessario sincronizar os PEs entre niveis para garantir que todas as
-descobertas do nivel atual foram completadas antes do inicio do proximo nivel.
-Ao final, a BFS termina quando todas as fronteiras locais estao vazias e nenhum
-PE possui trabalho pendente.
-
-O uso de NVSHMEM se alinha bem ao comportamento irregular da BFS. Em vez de
-forcar a GPU a acumular descobertas, sincronizar com o CPU e entao realizar uma
-troca de mensagens, a propria thread que encontra uma aresta remota pode emitir
-a atualizacao. Esse modelo nao elimina os custos de comunicacao, atomicos e
-sincronizacao, mas reduz a distancia entre computacao e comunicacao. Para
-grafos massivos, onde a quantidade de arestas visitadas e grande e o padrao de
-destinos e imprevisivel, essa aproximacao pode melhorar a escalabilidade e a
-utilizacao do hardware.
-
-No contexto desta tese, a BFS em NVSHMEM representa uma abordagem
-\textit{GPU-side}: o CPU continua importante para inicializacao, lancamento dos
-processos, configuracao MPI/NVSHMEM e validacao, mas o laco principal de
-traversal e comunicacao fina ocorre dentro da GPU. Essa separacao permite usar
-MPI para coordenacao global e NVSHMEM para atualizacoes remotas de baixa
-granularidade, combinando dois modelos de programacao adequados a camadas
-diferentes do sistema.
+Portanto, a BFS em GPU deve equilibrar tres objetivos. Primeiro, preservar a
+estrutura por niveis da BFS, garantindo que a proxima fronteira contenha apenas
+vertices descobertos a partir da fronteira atual. Segundo, manter eficiencia de
+trabalho, evitando varrer o grafo inteiro a cada iteracao. Terceiro, adaptar a
+execucao irregular do grafo ao modelo de hardware da GPU, organizando fronteiras,
+trabalho e comunicacao de forma a reduzir desbalanceamento, contencao e acessos
+ineficientes a memoria
+\cite{merrillgpu}.
 
 \bibliographystyle{plain}
 \bibliography{bibliografia}
