@@ -1,0 +1,27 @@
+\documentclass{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{url}
+\usepackage{listings}
+\usepackage{tikz}
+\usepackage{float}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=false,
+  columns=fullflexible,
+  keepspaces=true
+}
+
+\tikzset{
+  vertex/.style={circle, draw, minimum size=8mm, inner sep=0pt},
+  frontier/.style={circle, draw, fill=blue!25, minimum size=8mm, inner sep=0pt},
+  visited/.style={circle, draw, fill=gray!25, minimum size=8mm, inner sep=0pt},
+  undiscovered/.style={circle, draw, fill=white, minimum size=8mm, inner sep=0pt},
+  treeedge/.style={very thick, blue!70!black},
+  graphedge/.style={gray!70}
+}
+
+
+\begin{document}
