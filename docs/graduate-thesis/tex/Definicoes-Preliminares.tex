@@ -1,0 +1,49 @@
+\section{NVSHMEM}
+NVSHMEM e uma biblioteca de comunicao para GPUs NVIDIA baseada no modelo OpenSHMEM. 
+O objetivo eh oferecer um espaco de memoria global entre GPUs, onde cada elemento de 
+processamento possue uma memoria local, que pode ser enderecado globalmente atraves de
+operacoes de comunicacao. O principal diferencial do NVSHMEM e o motivo de ser utilizado
+nesse trabalho eh que as operacoes podem ser emitidas diretamente de um kernel CUDA,
+sem envolver a CPU \cite{hsunvshmem}.
+
+As unidades de processamento sao divididasaaa em PEs (Process Unit). A biblioteca define
+regioes de memoria simetricas, essas regioes sao alocadas coletivamente por todas as PEs.
+A simetria permite que uma PE, calcule o endereco logico global correspondente a um
+endereco logico local, e um indentificador de PE. O NVSHMEM fornece operacoes remotas
+como leituras e escritas, e atomicos.
+
+Pelas suas caracteristicas a biblioteca NVSHMEM e relevante para algoritmos irregulares.
+Em aplicacoes densas ou estruturadas, a comunicacao pode ser prevista e agrupada
+em mensagens grandes. Em grafos, por outro lado, os destinos das atualizacoes
+sao descobertos durante a execucao. Ao expandir uma fronteira de BFS, uma thread
+pode visitar uma aresta, identificar que o vertice vizinho pertence a outro PE e
+precisar atualizar o estado desse vertice remoto. Com NVSHMEM, essa atualizacao
+pode ser expressa diretamente no kernel, usando uma operacao remota ou atomica,
+sem retornar primeiro ao host para empacotar mensagens \cite{hsunvshmem}.
+
+\section{MPI}
+MPI (\textit{Message Passing Interface}) e um padrao de comunicacao para
+programas paralelos em memoria distribuida. Em um programa MPI, a execucao e
+organizada em processos independentes, chamados normalmente de ranks. Cada rank
+possui seu proprio espaco de enderecamento e troca dados com os demais por meio
+de chamadas explicitas de comunicacao. Esse modelo e adequado para clusters,
+onde a memoria de uma maquina ou processo nao pode ser acessada diretamente por
+outro processo sem uma operacao de comunicacao definida \cite{mpistandard}.
+
+O modelo de MPI se baseia em troca de mensagens. Em comunicacoes ponto a ponto,
+um rank envia dados e outro rank recebe esses dados. Operacoes como
+\texttt{MPI\_Send} e \texttt{MPI\_Recv} representam esse padrao basico. Tambem
+existem versoes nao bloqueantes, como \texttt{MPI\_Isend} e
+\texttt{MPI\_Irecv}, que permitem iniciar uma transferencia e continuar a
+execucao enquanto a comunicacao progride. Esse tipo de comunicacao e importante
+em aplicacoes paralelas porque pode permitir sobreposicao entre computacao e
+transferencia de dados.
+
+MPI tambem define operacoes coletivas, nas quais todos os ranks de um
+comunicador participam. Exemplos comuns incluem \texttt{MPI\_Barrier}, usada
+para sincronizacao, \texttt{MPI\_Bcast}, usada para difundir dados de um rank
+para os demais, e \texttt{MPI\_Reduce} ou \texttt{MPI\_Allreduce}, usadas para
+combinar valores produzidos localmente por cada rank. Em algoritmos iterativos,
+essas operacoes aparecem frequentemente para calcular condicoes globais de
+parada, agregar estatisticas ou garantir que todos os processos avancem para a
+proxima fase de execucao.

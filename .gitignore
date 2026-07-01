@@ -10,5 +10,8 @@
 *.pdf
 *.blg
 *.weights
+*.brf
+*.lof
+*.lot
 build
 dot

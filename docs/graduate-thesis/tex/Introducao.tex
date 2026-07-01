@@ -1,0 +1,101 @@
+\section{O que foi feito}
+Este trabalho propoem um novo metodo para o algoritmo de busca em largura em
+contexto de dados massivos. A linguagem CUDA em conjunto com a biblioteca de comunicacao da NVIDIA NVSHMEM,
+foram utilizados para o desemvolvimento do algoritimo, os testes foram feitos em dois ambientes:
+\begin{itemize}
+\item Sistema operacional Linux, GPU 5060ti 16GB, e processador Ryzen 5 5600x, 32GB de memoria RAM.
+\item No de uma GB200, linkar.
+\end{itemize}
+
+Com o crescimento da inteligencia artificial, a necessidade de processamente de dados massivos vem se tornando cada vez mais relevante. Em conjuntos de dados de grande escala eh comum ser necessario representar o relacionamente entre diferentes entidades, eh natural que esse tipo de representacao seja feito atraves de modelagens em grafo.
+
+Em uma rede social, vertices podem representar usuarios e arestas podem representar
+amizades, seguidores, mensagens ou interacoes \cite{easleykleinberg}. Na Web,
+paginas sao vertices e hiperlinks sao arestas \cite{brinpage}. Em seguranca
+computacional, grafos podem modelar fluxos de rede, dependencias entre
+processos, tentativas de acesso e relacoes entre entidades suspeitas
+\cite{akoglugraphanomaly}. Em biologia, vertices podem representar proteinas,
+genes ou moléculas, e arestas podem representar interacoes
+\cite{barabasinetworkbiology}. Em todos esses casos, a Busca em Largura aparece como uma
+primitiva para calcular alcancabilidade, distancia em numero de arestas e
+expansao de vizinhanca.
+
+% O trabalho utiliza o Graph500 como benchmark para avaliacao da performance.
+% 
+% A literatura de sistemas de grafos trata a BFS como uma das operacoes centrais
+% para avaliar plataformas de processamento de dados irregulares. O Graph500 foi
+% proposto para complementar benchmarks numericos tradicionais com uma carga de
+% trabalho orientada a dados, motivado pela diferenca entre simulacoes fisicas,
+% que tendem a ser estruturadas e intensivas em ponto flutuante, e aplicacoes de
+% informatica, que tendem a ser nao estruturadas, orientadas a inteiros e com
+% baixa localidade \cite{murphygraph500}. Sua especificacao define a BFS como o
+% Kernel 2 do benchmark, executado sobre grafos sinteticos de escala crescente, e
+% usa a metrica TEPS, ou arestas atravessadas por segundo, para medir desempenho
+% \cite{graph500spec}. Isso mostra que a BFS nao e apenas um exercicio teorico:
+% ela e usada como proxy para medir a capacidade de supercomputadores processarem
+% analise de grafos massivos.
+% 
+% Em redes sociais, a BFS modela consultas de vizinhanca e distancia social. A
+% pergunta ``quais usuarios estao a ate dois ou tres saltos de uma conta?'' e uma
+% execucao limitada de BFS. Esse tipo de consulta aparece em recomendacao de
+% amizades, propagacao de informacao, deteccao de comunidades locais e analise de
+% influencia \cite{easleykleinberg}. Em grafos com bilhoes de relacoes, a
+% expansao de poucos niveis pode atingir uma quantidade enorme de vertices,
+% especialmente quando existem hubs de grau muito alto. Por isso, mesmo uma BFS
+% limitada por profundidade pode exigir processamento paralelo e estruturas de
+% dados distribuidas.
+% 
+% Em grafos da Web, a BFS tambem e uma abstracao natural. Um rastreador
+% \textit{web crawler} pode iniciar em um conjunto de paginas sementes e expandir
+% links por camadas, descobrindo novas paginas a cada nivel \cite{brinpage}. O
+% sistema Pregel, do Google, foi proposto para processamento de grafos em larga
+% escala e apresenta algoritmos como caminhos minimos, PageRank, propagacao de
+% rotulos e outras computacoes iterativas sobre grafos distribuidos \cite{pregel}.
+% Embora Pregel seja um modelo mais geral que BFS, sua execucao em superpassos e
+% troca de mensagens entre vertices e muito proxima da ideia de fronteiras
+% sucessivas usada em BFS distribuida.
+% 
+% Em seguranca, investigacao de fraudes e analise de dependencias, BFS e usada
+% para expandir a vizinhanca de uma entidade de interesse. A partir de uma conta,
+% um endereco IP, uma maquina infectada ou um processo suspeito, a busca em
+% largura identifica entidades conectadas por poucos saltos. Essa forma de
+% exploracao e importante porque muitas relacoes relevantes nao aparecem em uma
+% aresta direta, mas em cadeias curtas: contas que compartilham dispositivos,
+% maquinas que se comunicam com o mesmo servidor, ou processos que dependem dos
+% mesmos arquivos \cite{akoglugraphanomaly}. Em grafos corporativos ou de
+% telecomunicacoes, essas buscas podem envolver centenas de milhoes de vertices e
+% precisam responder em tempo interativo ou quase interativo.
+% 
+% O desafio e que os grafos modernos podem ser massivos e irregulares. Grafos de
+% redes sociais e da Web frequentemente possuem distribuicao de grau altamente
+% desbalanceada: poucos vertices concentram muitas arestas, enquanto a maioria tem
+% grau baixo. Essa propriedade gera duas dificuldades para BFS. Primeiro, ha
+% desbalanceamento de trabalho, pois expandir um vertice de alto grau custa muito
+% mais do que expandir um vertice comum. Segundo, ha muita contencao, pois muitos
+% caminhos podem tentar descobrir o mesmo vertice ao mesmo tempo.
+% 
+% Alem disso, a BFS tem baixa localidade de memoria. Em matrizes densas ou
+% vetores, os acessos costumam ser contiguos e previsiveis. Em grafos, ao
+% expandir a fronteira, o algoritmo segue listas de adjacencia que podem apontar
+% para posicoes distantes e aparentemente aleatorias. Consequentemente, a BFS e
+% normalmente limitada por largura de banda, latencia de memoria, atomicos,
+% sincronizacao e comunicacao entre maquinas, e nao por operacoes aritmeticas.
+% 
+% Trabalhos em arquiteturas paralelas mostram como essas dificuldades aparecem na
+% pratica. Beamer, Asanovic e Patterson propuseram a BFS \textit{direction
+% optimizing}, que alterna entre uma expansao top-down, baseada na fronteira
+% atual, e uma expansao bottom-up, que examina vertices ainda nao visitados
+% procurando vizinhos na fronteira \cite{beamerbfs}. Essa mudanca reduz trabalho
+% em grafos de pequeno diametro e grande fronteira, um caso comum em grafos
+% sociais e da Web. Merrill, Garland e Grimshaw estudaram BFS em GPU e mostraram
+% que a primitiva e representativa de computacoes paralelas com acesso a memoria e
+% distribuicao de trabalho irregulares; sua implementacao alcançou bilhoes de
+% arestas atravessadas por segundo em uma ou mais GPUs \cite{merrillgpu}.
+% 
+% Portanto, BFS aparece em problemas reais de duas formas complementares. Como
+% algoritmo final, ela responde consultas de alcance, distancia e vizinhanca. Como
+% primitiva de sistema, ela estressa exatamente os componentes que tornam grafos
+% massivos dificeis: memoria irregular, fronteiras dinamicas, atomicos,
+% desbalanceamento e comunicacao. Por isso, estudar BFS em GPU e em ambientes
+% distribuidos e uma forma direta de estudar o desempenho de analise de grafos em
+% escala real.

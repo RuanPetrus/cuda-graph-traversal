@@ -1,0 +1,25 @@
+\section{Computador Pessoal}
+Essa secao compara os resultados observados na performance da travessia de grafos, em um computador pessoal, o computador em questao possue um processador Ryzen 5 5600xt e uma GPU NVIDIA 5060ti. A versao de referencia MPI utilizou 12 workers, cada um com 1 hyper thread da CPU. A versao NVSHMEM utilizou 1 worker, utilizando uma thread e uma GPU.
+
+A metrica primaria de comparacao eh a mediana de TEPS (Traversed Edges per Second). O
+
+The primary comparison metric is the Graph500 median traversed edges per second (). Median kernel time is also included because it shows the direct elapsed time for a representative traversal. The CPU MPI runs used 12 MPI processes bound to hardware threads. The NVSHMEM GPU runs used one MPI process and one visible GPU.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llllr}
+\hline
+Algorithm & Implementation & Run & Median time (s) & Median TEPS \\
+\hline
+BFS & MPI CPU reference & BFS-only & 0.308311 & $2.17658 \times 10^{8}$ \\
+SSSP & MPI CPU reference & BFS+SSSP binary & 0.759998 & $8.82979 \times 10^{7}$ \\
+BFS & NVSHMEM GPU & BFS-only & 0.205414 & $3.26688 \times 10^{8}$ \\
+SSSP & NVSHMEM GPU & SSSP-only & 0.0109337 & $1.19040 \times 10^{2}$ \\
+\hline
+\end{tabular}
+\caption{Median Graph500 traversal performance for MPI CPU and NVSHMEM GPU runs at SCALE 22 and edgefactor 16.}
+\end{table}
+
+For BFS, the NVSHMEM GPU implementation reaches $3.26688 \times 10^{8}$ median TEPS, compared with $2.17658 \times 10^{8}$ median TEPS for the CPU MPI BFS-only run. This is approximately a $1.50\times$ improvement in median TEPS. Compared with the BFS measurement from the combined CPU BFS+SSSP binary, the NVSHMEM GPU BFS result is approximately a $1.49\times$ improvement.
+
+For SSSP, the CPU MPI reference run reports $8.82979 \times 10^{7}$ median TEPS with a median time of 0.759998 seconds. The NVSHMEM GPU SSSP-only run reports 119.04 median TEPS and a median time of 0.0109337 seconds. This result is not directly comparable to the CPU SSSP result because the same output also reports inconsistent edge-count statistics, including \texttt{thirdquartile\_nedge=6.5} and \texttt{stddev\_nedge=106.69224024}. The NVSHMEM SSSP result should therefore be treated as an anomalous or incomplete measurement until the SSSP edge-count and TEPS accounting are corrected.

@@ -366,7 +366,7 @@
 		\settodepth{\len@uadesch}{jgpy}\settoheight{\len@uacaph}{B}%desc & cap heights
 		\settowidth{\len@brasiliaw}{Bras\'ilia}%
 		\addtolength{\len@brasiliaw}{-.105em}%ajusta pequeno espaço em branco antes do B desta fonte
-		\includegraphics[width=\len@brasiliaw]{#1}\\[.63\len@uacaph]%logo com a largura da palavra Brasilia
+		\IfFileExists{#1}{\includegraphics[width=\len@brasiliaw]{#1}\\[.63\len@uacaph]}{}%logo com a largura da palavra Brasilia
 		\@universidade\@lskipoffset{.5}%
 		\@textscale{.5}{\@instituto}\@lskipoffset{.25}%
 		\@textscale{.5}{\@departamento}%
