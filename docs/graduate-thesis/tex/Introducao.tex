@@ -1,13 +1,8 @@
 \section{O que foi feito}
-Este trabalho propoem um novo metodo para o algoritmo de busca em largura em
-contexto de dados massivos. A linguagem CUDA em conjunto com a biblioteca de comunicacao da NVIDIA NVSHMEM,
-foram utilizados para o desemvolvimento do algoritimo, os testes foram feitos em dois ambientes:
-\begin{itemize}
-\item Sistema operacional Linux, GPU 5060ti 16GB, e processador Ryzen 5 5600x, 32GB de memoria RAM.
-\item No de uma GB200, linkar.
-\end{itemize}
 
-Com o crescimento da inteligencia artificial, a necessidade de processamente de dados massivos vem se tornando cada vez mais relevante. Em conjuntos de dados de grande escala eh comum ser necessario representar o relacionamente entre diferentes entidades, eh natural que esse tipo de representacao seja feito atraves de modelagens em grafo.
+Com o crescimento da inteligencia artificial, a necessidade de processamente de dados massivos vem se tornando cada vez mais relevante. 
+Em conjuntos de dados de grande escala eh comum ser necessario representar o relacionamente entre diferentes entidades. 
+É natural que esse tipo de representacao seja feito atraves de modelagens em grafo.
 
 Em uma rede social, vertices podem representar usuarios e arestas podem representar
 amizades, seguidores, mensagens ou interacoes \cite{easleykleinberg}. Na Web,
@@ -19,6 +14,15 @@ genes ou moléculas, e arestas podem representar interacoes
 \cite{barabasinetworkbiology}. Em todos esses casos, a Busca em Largura aparece como uma
 primitiva para calcular alcancabilidade, distancia em numero de arestas e
 expansao de vizinhanca.
+
+
+Este trabalho propoem um novo metodo para o algoritmo de busca em largura no
+contexto de dados massivos explorando metodos de paralelismo, com o foco em processadores manycore.  A linguagem CUDA em conjunto com a biblioteca de comunicacao da NVIDIA NVSHMEM,
+foram utilizados para o desemvolvimento do algoritimo, os testes foram feitos em dois ambientes:
+\begin{itemize}
+\item Sistema operacional Linux, GPU NVIDIA 5060ti 16GB, e processador Ryzen 5 5600x, 32GB de memoria RAM.
+\item No de uma GB200, linkar. \leal{ explicar melhor esse ambiente}
+\end{itemize}
 
 % O trabalho utiliza o Graph500 como benchmark para avaliacao da performance.
 % 

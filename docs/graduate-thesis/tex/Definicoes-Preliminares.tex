@@ -9,8 +9,8 @@ sem envolver a CPU \cite{hsunvshmem}.
 As unidades de processamento sao divididasaaa em PEs (Process Unit). A biblioteca define
 regioes de memoria simetricas, essas regioes sao alocadas coletivamente por todas as PEs.
 A simetria permite que uma PE, calcule o endereco logico global correspondente a um
-endereco logico local, e um indentificador de PE. O NVSHMEM fornece operacoes remotas
-como leituras e escritas, e atomicos.
+endereco logico local, e um indentificador de PE. \leal{\sout{O NVSHMEM fornece operacoes remotas
+como leituras e escritas, e atomicos.} explicar essa parte ou tirar, oq é uma operação atomica}
 
 Pelas suas caracteristicas a biblioteca NVSHMEM e relevante para algoritmos irregulares.
 Em aplicacoes densas ou estruturadas, a comunicacao pode ser prevista e agrupada
@@ -30,6 +30,7 @@ de chamadas explicitas de comunicacao. Esse modelo e adequado para clusters,
 onde a memoria de uma maquina ou processo nao pode ser acessada diretamente por
 outro processo sem uma operacao de comunicacao definida \cite{mpistandard}.
 
+\leal{ \sout{
 O modelo de MPI se baseia em troca de mensagens. Em comunicacoes ponto a ponto,
 um rank envia dados e outro rank recebe esses dados. Operacoes como
 \texttt{MPI\_Send} e \texttt{MPI\_Recv} representam esse padrao basico. Tambem
@@ -47,3 +48,4 @@ combinar valores produzidos localmente por cada rank. Em algoritmos iterativos,
 essas operacoes aparecem frequentemente para calcular condicoes globais de
 parada, agregar estatisticas ou garantir que todos os processos avancem para a
 proxima fase de execucao.
+}}
