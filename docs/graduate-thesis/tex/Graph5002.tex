@@ -1,0 +1,174 @@
+\section{Introdução}
+\label{sec:graph500-intro}
+
+O Graph500 é um benchmark voltado à avaliação de sistemas 
+de computação de alto desempenho em aplicações centradas no processamento de grafos. 
+Diferentemente de benchmarks tradicionais, como o LINPACK, que enfatizam operações 
+numéricas densas e desempenho em ponto flutuante, 
+o Graph500 foi proposto para representar aplicações intensivas em dados. 
+Nesse tipo de aplicação, o desempenho é fortemente influenciado por acesso à memória, 
+comunicação entre unidades de processamento, construção de estruturas esparsas e processamento de grafos \cite{murphygraph500, graph500spec}.
+
+A especificação do Graph500 define um conjunto de problemas sobre um grafo sintético, 
+não direcionado e ponderado. Inicialmente, o grafo é gerado como uma lista de tuplas de arestas. 
+A partir dessa lista, o benchmark mede a construção de uma estrutura interna de grafo e, 
+em seguida, executa kernels de análise sobre essa estrutura. 
+A versão da especificação considerada neste trabalho foca, em particular, 
+nos benchmarks de busca (\textit{Search}) e de caminhos mínimos (\textit{Shortest Path}) \cite{graph500spec}.
+
+O objetivo do Graph500 não é apenas medir o tempo de uma implementação isolada 
+de BFS ou SSSP. O benchmark procura exercitar o sistema em um fluxo mais próximo
+ de aplicações reais de grafos: geração de uma entrada irregular, construção de uma estrutura de dados adequada, 
+ execução de várias buscas a partir de diferentes vértices de origem, validação dos resultados
+  e cálculo de estatísticas de desempenho. Por esse motivo, o Graph500 é especialmente relevante para este trabalho..
+
+Este capítulo apresenta os principais elementos da especificação do Graph500 necessários para contextualizar 
+a implementação estudada neste trabalho. A Seção~\ref{sec:graph500-fluxo} descreve o fluxo geral de execução do benchmark. 
+A Seção~\ref{sec:graph500-geracao-grafo} apresenta o processo de geração do grafo sintético utilizado pelo Graph500, incluindo os parâmetros que determinam o tamanho da instância e as propriedades estruturais produzidas pelo modelo R-MAT. 
+A Seção~\ref{sec:graph500-kernel1} discute a etapa de construção da representação interna do grafo, correspondente ao Kernel 1. 
+Em seguida, a Seção~\ref{sec:graph500-kernel2} apresenta a execução da busca em largura, correspondente ao Kernel 2, 
+enquanto a Seção~\ref{sec:graph500-kernel3} trata, de forma complementar, do problema de caminhos mínimos executado pelo Kernel 3. 
+Por fim, a Seção~\ref{sec:graph500-validacao} descreve os critérios de validação dos resultados, 
+a Seção~\ref{sec:graph500-metricas} apresenta as métricas de desempenho reportadas pelo benchmark e 
+% a Seção~\ref{sec:graph500-criterios} discute os critérios gerais de avaliação definidos pela especificação.
+
+
+\section{Fluxo do Benchmark}
+\label{sec:graph500-fluxo}
+
+A execução do Graph500 é organizada em etapas bem definidas. 
+Primeiro, o benchmark gera uma lista de arestas. 
+Em seguida, o Kernel 1 constrói uma representação de grafo a partir dessa lista. 
+Depois, são selecionados até 64 vértices de origem, denominados \textit{search keys}, 
+que serão utilizados nas execuções de BFS e SSSP. 
+Para cada origem, o Kernel 2 executa uma BFS e 
+produz uma árvore de busca em largura representada por predecessores. 
+Em outro laço, o Kernel 3 executa SSSP e produz tanto predecessores quanto distâncias. 
+Por fim, os resultados são validados e as métricas de desempenho são calculadas \cite{graph500spec}.
+
+Nem todas as etapas entram no tempo reportado pelo benchmark. 
+A geração da lista de arestas e a seleção das raízes não são cronometradas. 
+O tempo medido inclui a construção do grafo no Kernel 1 e as execuções dos kernels de busca. 
+A validação também não é incluída nas métricas de desempenho, 
+mas é obrigatória para demonstrar que os resultados produzidos pela implementação são corretos.
+
+Uma característica importante da especificação é que os Kernels 2 e 3 são executados em laços separados. 
+A execução de SSSP não pode reutilizar informações computadas pela BFS, e diferentes invocações de um mesmo kernel também não podem compartilhar informações entre si. Essa regra impede que uma implementação se beneficie de conhecimento acumulado em buscas anteriores e torna a medição mais representativa da execução de buscas independentes.
+
+\section{Geração do Grafo}
+\label{sec:graph500-geracao-grafo}
+
+O Graph500 utiliza um gerador sintético escalável baseado em grafos de Kronecker, semelhante ao modelo R-MAT. 
+A entrada inicial do benchmark é uma lista de tuplas de arestas. 
+Cada tupla contém dois vértices, \textit{StartVertex} e \textit{EndVertex}, 
+e, opcionalmente, um peso. 
+
+O principal parâmetro de entrada do benchmark é \texttt{SCALE}. O número de vértices do grafo é definido por:
+
+\begin{equation}
+N = 2^{\mathrm{SCALE}}.
+\end{equation}
+
+O número de arestas é determinado pelo parâmetro \texttt{edgefactor}, cujo valor padrão na especificação é 16:
+
+\begin{equation}
+M = \mathrm{edgefactor} \times N.
+\end{equation}
+
+Assim, ao aumentar \texttt{SCALE} em uma unidade, o número de vértices é dobrado. Mantido o mesmo valor de \texttt{edgefactor}, o número de arestas também dobra. A Tabela~\ref{tab:graph500-classes} apresenta as classes de problema definidas na especificação.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{l|c|c|c}
+Classe & SCALE & Edge factor & Tamanho aproximado da entrada BFS \
+\hline
+Toy & 26 & 16 & 0,017 TB \
+Mini & 29 & 16 & 0,137 TB \
+Small & 32 & 16 & 1,100 TB \
+Medium & 36 & 16 & 17,592 TB \
+Large & 39 & 16 & 140,738 TB \
+Huge & 42 & 16 & 1125,900 TB \
+\end{tabular}
+\caption{Classes de problema do Graph500 segundo a especificação.}
+\label{tab:graph500-classes}
+\end{table}
+
+O gerador R-MAT pode ser entendido como uma divisão recursiva da matriz de adjacência. Para cada aresta, a matriz é dividida em quatro quadrantes, e o gerador escolhe em qual deles a aresta será posicionada de acordo com probabilidades predefinidas. A especificação define os parâmetros iniciadores como $A = 0{,}57$, $B = 0{,}19$, $C = 0{,}19$ e $D = 1 - (A+B+C) = 0{,}05$ \cite{graph500spec}. 
+Esse processo é repetido até que todos os bits dos identificadores dos vértices da aresta sejam determinados.
+
+Essa distribuição produz grafos com estrutura irregular, contendo poucos vértices de grau muito alto e muitos vértices de grau baixo. 
+Essa característica é importante para o benchmark, pois se aproxima de propriedades observadas em grafos reais e impõe desafios relacionados a balanceamento de carga, acesso à memória e comunicação. Além disso, o gerador pode produzir laços e arestas múltiplas entre os mesmos vértices. Esses elementos fazem parte da lista de entrada fornecida ao Kernel 1, ainda que possam ser tratados posteriormente pela representação interna utilizada nos kernels seguintes.
+
+Após a geração, a especificação exige que os identificadores dos vértices sejam permutados aleatoriamente e que a lista de arestas também seja embaralhada. Esse procedimento remove localidade artificial introduzida pelo processo de geração. Sem essa etapa, uma implementação poderia explorar padrões de localidade que não necessariamente ocorreriam em grafos reais. Em implementações paralelas, a numeração dos vértices deve permanecer globalmente consistente, e a distribuição dos dados não deve introduzir localidade indevida entre processadores \cite{graph500spec}.
+
+\section{Kernel 1: Construção do Grafo}
+\label{sec:graph500-kernel1}
+
+O Kernel 1 transforma a lista de tuplas de arestas em uma representação interna do grafo, que será utilizada pelos kernels posteriores. A especificação não impõe uma estrutura de dados específica. Uma implementação pode utilizar matrizes esparsas, listas de adjacência, CSR (\textit{Compressed Sparse Row}), estruturas distribuídas ou outras representações adequadas ao hardware-alvo. 
+A exigência central é que a estrutura construída permita a execução correta dos kernels seguintes e a validação dos resultados produzidos \cite{graph500spec}.
+
+Esse kernel recebe apenas a lista de arestas e o tamanho dessa lista. Informações como o número total de vértices devem ser determinadas pela própria implementação, caso sejam necessárias. O grafo resultante deve representar uma entrada não direcionada. Portanto, uma aresta entre $u$ e $v$ deve permitir travessia em ambas as direções.
+O tempo de construção do grafo é incluído nas métricas do Graph500. 
+Essa escolha é relevante porque, em aplicações reais, o custo de transformar uma lista de relações em uma estrutura eficiente para processamento pode ser significativo. Em ambientes paralelos, essa etapa pode envolver particionamento, redistribuição de arestas, cálculo de graus, alocação de memória e montagem das listas de adjacência.
+
+Depois de construída, a representação do grafo não pode ser modificada entre os kernels de forma a favorecer uma execução específica. A especificação permite reservar espaço para marcações temporárias ou travas, desde que esse espaço seja utilizado apenas durante a execução do kernel corrente. Essa regra separa a estrutura permanente do grafo dos dados temporários empregados em cada busca.
+
+Antes da execução dos kernels de busca, são selecionados aleatoriamente até 64 vértices de origem. 
+
+\section{Kernel 2: Busca em Largura}
+\label{sec:graph500-kernel2}
+
+O Kernel 2 executa uma busca em largura, ou BFS, a partir de cada raiz selecionada. 
+A BFS percorre o grafo por níveis: primeiro visita a origem, depois seus vizinhos, em seguida os vizinhos ainda não visitados desses vértices, e assim sucessivamente. 
+Ao final, o kernel deve produzir uma árvore de busca em largura representada por um vetor de predecessores. 
+O predecessor da raiz deve ser a própria raiz, e vértices não atingíveis a partir da origem devem receber predecessor igual a $-1$ \cite{graph500spec, cormenalgorithms}.
+
+A especificação não fixa o algoritmo interno de BFS. Uma implementação pode utilizar fila, fronteiras, \textit{bitmaps}, algoritmos direcionais, particionamento distribuído ou estratégias específicas para GPU, desde que o resultado final seja uma árvore de busca em largura válida. Essa liberdade é necessária porque diferentes arquiteturas exigem diferentes estratégias de paralelização e organização dos dados.
+
+O padrão de acesso à memória do Kernel 2 é uma das principais motivações do Graph500. Em grafos esparsos, a BFS possui acesso dependente dos dados, baixa previsibilidade e pouca computação por aresta. Além disso, grafos gerados pelo modelo R-MAT apresentam grande variação nos graus dos vértices, o que dificulta o balanceamento de carga. 
+Em sistemas paralelos, múltiplas threads ou processos podem tentar descobrir o mesmo vértice simultaneamente, gerando contenção e exigindo mecanismos de sincronização.
+
+A especificação permite uma condição de corrida benigna na escolha do predecessor de um vértice. Quando vértices do nível $k$ descobrem vértices do nível $k+1$, não é necessário garantir que o primeiro visitante seja sempre registrado como predecessor. Se mais de um vértice do nível anterior puder descobrir corretamente o mesmo vértice, qualquer um deles pode ser aceito. O requisito é que a estrutura final satisfaça as propriedades de uma árvore de busca em largura.
+
+\section{Kernel 3: Caminhos Mínimos de Fonte Única}
+\label{sec:graph500-kernel3}
+
+O Kernel 3 executa SSSP (\textit{Single Source Shortest Paths}), isto é, calcula a menor distância da raiz para todos os vértices atingíveis em um grafo com pesos não negativos. A saída inclui tanto um vetor de distâncias quanto uma árvore de predecessores. Assim como na BFS, o predecessor da origem deve ser a própria origem, e vértices não atingíveis devem ter predecessor igual a $-1$ \cite{graph500spec, cormenalgorithms}.
+
+Esse kernel é executado separadamente da BFS e não pode reutilizar dados produzidos pelo Kernel 2. Embora muitos algoritmos de SSSP também possam ser organizados em torno de fronteiras, a presença de pesos nas arestas introduz dependências adicionais e modifica a ordem em que os vértices devem ser processados. A especificação também permite corridas benignas em SSSP, desde que as distâncias e a árvore final representem caminhos mínimos corretos.
+
+Neste trabalho, a ênfase principal está na BFS, pois ela corresponde ao Kernel 2 do Graph500 e constitui o núcleo da implementação estudada.
+
+\section{Validação}
+\label{sec:graph500-validacao}
+
+Em escalas grandes, não é prático validar o resultado por comparação com uma saída padrão fixa. O grafo é gerado de forma pseudoaleatória, e diferentes implementações paralelas podem escolher predecessores distintos, mas igualmente válidos. Por esse motivo, o Graph500 utiliza uma validação baseada em propriedades estruturais do resultado \cite{graph500spec}.
+
+No caso da BFS, a validação verifica se o vetor de predecessores representa uma árvore de busca em largura válida. Entre as propriedades verificadas estão: a raiz deve apontar para si mesma; cada vértice visitado deve possuir uma aresta real ligando-o ao seu predecessor; vértices não visitados devem estar fora da componente atingível a partir da raiz; e os níveis induzidos pela árvore devem respeitar a propriedade da busca em largura. Em particular, para qualquer aresta do grafo, os níveis de seus extremos não podem diferir por mais de uma unidade quando ambos pertencem à árvore.
+
+Para SSSP, a validação também verifica a consistência da árvore de predecessores, mas a propriedade de níveis é substituída por propriedades de distância. As distâncias associadas aos vértices devem ser compatíveis com os pesos das arestas, e a árvore deve representar caminhos mínimos a partir da origem. A validação é executada após cada busca, mas seu tempo não é incluído nas métricas de desempenho.
+
+
+\section{Métricas de Desempenho}
+\label{sec:graph500-metricas}
+
+A principal métrica do Graph500 é TEPS (\textit{Traversed Edges Per Second}), ou arestas percorridas por segundo. Essa métrica foi escolhida porque BFS e SSSP em grafos esparsos realizam pouca aritmética por aresta. Portanto, medir operações de ponto flutuante por segundo não representa adequadamente o principal gargalo dessas aplicações. A métrica TEPS mede a taxa com que o sistema percorre arestas e, consequentemente, reflete melhor fatores como largura de banda efetiva, latência de memória, comunicação, sincronização e balanceamento de carga \cite{graph500spec}.
+
+Para uma execução de um kernel, a taxa é definida por:
+
+\begin{equation}
+\mathrm{TEPS} = \frac{m}{t},
+\end{equation}
+
+em que $m$ é o número de arestas percorridas na componente visitada e $t$ é o tempo medido da execução. Para arestas que não correspondem a laços, a contagem considera o número de tuplas da componente dividido por dois, pois o grafo é não direcionado. Laços são contabilizados conforme as regras definidas na especificação.
+
+Como cada benchmark executa várias buscas, a saída deve incluir estatísticas dos tempos, das arestas percorridas e das taxas TEPS. A especificação solicita valores como mínimo, primeiro quartil, mediana, terceiro quartil, máximo, média e desvio padrão. Para TEPS, por se tratar de uma taxa, a média reportada deve ser harmônica, e não aritmética. Essa escolha reduz distorções ao combinar taxas obtidas em buscas com tempos diferentes.
+
+Os campos de saída incluem, entre outros, \texttt{SCALE}, \texttt{edgefactor}, \texttt{NBFS}, \texttt{construction_time}, estatísticas de tempo da BFS, estatísticas da quantidade de arestas percorridas e estatísticas de TEPS. Quando apenas um dos kernels é executado, os campos de TEPS do outro kernel podem ser zerados, conforme permitido pela especificação \cite{graph500spec}.
+
+% \section{Critérios de Avaliação}
+% \label{sec:graph500-criterios}
+
+% A especificação define critérios de avaliação em ordem aproximada de importância. O primeiro critério é a aderência justa ao objetivo do benchmark. Em seguida, considera-se o maior tamanho de problema que uma máquina consegue executar e o menor tempo de execução para um tamanho de problema dado. Aspectos como tamanho do código, tempo de desenvolvimento, manutenibilidade e extensibilidade também são desejáveis, mas aparecem como objetivos secundários \cite{graph500spec}.
+
+% Essa ordem de critérios reforça a finalidade do Graph500. O benchmark não procura premiar apenas implementações pequenas ou simples, mas sim implementações que respeitem a especificação, processem grafos grandes e executem buscas de forma eficiente. Para este trabalho, isso significa que o desempenho em GPU só é relevante quando acompanhado da construção correta do grafo, da seleção adequada das raízes, da preservação da semântica da BFS e da validação dos predecessores gerados.
