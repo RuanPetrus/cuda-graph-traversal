@@ -13,5 +13,6 @@
 *.brf
 *.lof
 *.lot
+docs/graduate-thesis/results/
 build
 dot

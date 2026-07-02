@@ -20,7 +20,7 @@ O objetivo do Graph500 não é apenas medir o tempo de uma implementação isola
 de BFS ou SSSP. O benchmark procura exercitar o sistema em um fluxo mais próximo
  de aplicações reais de grafos: geração de uma entrada irregular, construção de uma estrutura de dados adequada, 
  execução de várias buscas a partir de diferentes vértices de origem, validação dos resultados
-  e cálculo de estatísticas de desempenho. Por esse motivo, o Graph500 é especialmente relevante para este trabalho..
+  e cálculo de estatísticas de desempenho. Por esse motivo, o Graph500 é especialmente relevante para este trabalho.
 
 Este capítulo apresenta os principais elementos da especificação do Graph500 necessários para contextualizar 
 a implementação estudada neste trabalho. A Seção~\ref{sec:graph500-fluxo} descreve o fluxo geral de execução do benchmark. 
@@ -80,14 +80,14 @@ Assim, ao aumentar \texttt{SCALE} em uma unidade, o número de vértices é dobr
 \begin{table}[H]
 \centering
 \begin{tabular}{l|c|c|c}
-Classe & SCALE & Edge factor & Tamanho aproximado da entrada BFS \
+Classe & SCALE & Edge factor & Tamanho aproximado da entrada BFS \\
 \hline
-Toy & 26 & 16 & 0,017 TB \
-Mini & 29 & 16 & 0,137 TB \
-Small & 32 & 16 & 1,100 TB \
-Medium & 36 & 16 & 17,592 TB \
-Large & 39 & 16 & 140,738 TB \
-Huge & 42 & 16 & 1125,900 TB \
+Toy & 26 & 16 & 0,017 TB \\
+Mini & 29 & 16 & 0,137 TB \\
+Small & 32 & 16 & 1,100 TB \\
+Medium & 36 & 16 & 17,592 TB \\
+Large & 39 & 16 & 140,738 TB \\
+Huge & 42 & 16 & 1125,900 TB \\
 \end{tabular}
 \caption{Classes de problema do Graph500 segundo a especificação.}
 \label{tab:graph500-classes}
@@ -164,7 +164,13 @@ em que $m$ é o número de arestas percorridas na componente visitada e $t$ é o
 
 Como cada benchmark executa várias buscas, a saída deve incluir estatísticas dos tempos, das arestas percorridas e das taxas TEPS. A especificação solicita valores como mínimo, primeiro quartil, mediana, terceiro quartil, máximo, média e desvio padrão. Para TEPS, por se tratar de uma taxa, a média reportada deve ser harmônica, e não aritmética. Essa escolha reduz distorções ao combinar taxas obtidas em buscas com tempos diferentes.
 
-Os campos de saída incluem, entre outros, \texttt{SCALE}, \texttt{edgefactor}, \texttt{NBFS}, \texttt{construction_time}, estatísticas de tempo da BFS, estatísticas da quantidade de arestas percorridas e estatísticas de TEPS. Quando apenas um dos kernels é executado, os campos de TEPS do outro kernel podem ser zerados, conforme permitido pela especificação \cite{graph500spec}.
+Os campos de saída incluem, entre outros, \texttt{SCALE},
+\texttt{edgefactor}, \texttt{NBFS}, estatísticas de tempo da BFS,
+estatísticas da quantidade de arestas percorridas e estatísticas de TEPS. O
+campo de tempo de construção, normalmente reportado como
+\texttt{construction\_time}, registra o tempo do Kernel 1. Quando apenas um dos
+kernels é executado, os campos de TEPS do outro kernel podem ser zerados,
+conforme permitido pela especificação \cite{graph500spec}.
 
 % \section{Critérios de Avaliação}
 % \label{sec:graph500-criterios}
