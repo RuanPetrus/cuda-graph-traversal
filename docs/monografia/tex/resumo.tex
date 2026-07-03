@@ -1,0 +1,18 @@
+Este trabalho investiga a execução de Busca em Largura em GPU usando CUDA e
+NVSHMEM, com o Graph500 como referência para geração de grafos, construção de
+estruturas e avaliação de desempenho. Foram desenvolvidas uma implementação
+CUDA/NVSHMEM compatível com o fluxo do Graph500 e uma versão refatorada em forma
+de biblioteca de travessia de grafos executada majoritariamente em GPU. A
+avaliação considerou um computador pessoal com uma GPU NVIDIA RTX 5060 Ti e um
+ambiente GB200 com quatro GPUs. Os resultados mostram ganhos expressivos na
+geração R-MAT e na BFS em escalas maiores. No computador pessoal, a geração em
+GPU foi aproximadamente $7{,}4$ vezes mais rápida que a referência em CPU em
+\texttt{SCALE=22}, e a biblioteca alcançou 2,138 GTEPS em \texttt{SCALE=21}. No
+GB200, em \texttt{SCALE=29}, a biblioteca alcançou 6,180 GTEPS, contra 1,570
+GTEPS da referência em CPU, além de reduzir o tempo de geração de 31,13 s para
+2,738 s. Os resultados indicam que manter a coordenação da BFS no dispositivo é
+uma direção promissora para travessia distribuída de grafos, embora a
+irregularidade, a comunicação remota e o uso de memória continuem sendo fatores
+limitantes.
+
+\textbf{Palavras-chave}: Busca em Largura, GPU, CUDA, NVSHMEM, Graph500.

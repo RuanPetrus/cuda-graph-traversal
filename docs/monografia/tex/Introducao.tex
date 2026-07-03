@@ -1,0 +1,59 @@
+Com o crescimento de aplicações baseadas em grandes volumes de dados, a
+necessidade de processar relações entre entidades tornou-se cada vez mais
+relevante. Uma forma natural de representar essas relações é por meio de grafos,
+nos quais vértices representam entidades e arestas representam conexões entre
+elas.
+
+Em uma rede social, vértices podem representar usuários e arestas podem
+representar amizades, seguidores, mensagens ou interações \cite{easleykleinberg}.
+Na Web, páginas são vértices e hiperlinks são arestas \cite{brinpage}. Em
+segurança computacional, grafos podem modelar fluxos de rede, dependências entre
+processos, tentativas de acesso e relações entre entidades suspeitas
+\cite{akoglugraphanomaly}. Em biologia, vértices podem representar proteínas,
+genes ou moléculas, e arestas podem representar interações
+\cite{barabasinetworkbiology}. Em todos esses casos, a Busca em Largura, ou BFS
+(\textit{Breadth-First Search}), aparece como uma primitiva para calcular
+alcançabilidade, distância em número de arestas e expansão de vizinhança.
+
+Este trabalho investiga a execução de BFS em GPU usando CUDA e NVSHMEM. O
+Graph500 foi utilizado como benchmark de referência, pois sua especificação
+avalia justamente cargas de trabalho centradas em grafos, incluindo geração de
+grafos sintéticos, construção de estruturas internas e execução de busca em
+largura. A partir desse benchmark, foram desenvolvidas duas etapas principais.
+
+Primeiro, foi implementada uma versão CUDA/NVSHMEM dos kernels do Graph500, com
+foco no Kernel 1, responsável pela construção da representação do grafo, e no
+Kernel 2, responsável pela BFS. Essa versão mantém compatibilidade conceitual com
+o fluxo do Graph500, mas executa a expansão das fronteiras em GPU e utiliza
+NVSHMEM para comunicação entre elementos de processamento.
+
+Segundo, a implementação foi refatorada em direção a uma biblioteca de travessia
+de grafos executada majoritariamente em GPU. Nessa versão, a geração do grafo, a
+conversão para uma representação distribuída e a execução da BFS são organizadas
+como componentes separados. A principal mudança em relação à versão híbrida é que
+o laço principal da BFS passa a permanecer no dispositivo, reduzindo a
+participação recorrente da CPU entre níveis da busca.
+
+Os experimentos foram realizados em dois ambientes. O primeiro foi o computador
+pessoal usado no desenvolvimento, com processador Ryzen 5 5600X, 32 GB de memória
+RAM e uma GPU NVIDIA RTX 5060 Ti com 16 GB de memória. O segundo foi um ambiente
+GB200 com processador Grace, 128 threads de CPU e quatro GPUs GB200.
+
+Os resultados mostram que a geração R-MAT em GPU apresenta ganhos expressivos nas
+maiores escalas avaliadas. No computador pessoal, em \texttt{SCALE=22}, a geração
+em GPU foi aproximadamente $7{,}4$ vezes mais rápida que a geração da referência
+em CPU. Para o Kernel 2, a versão CUDA/NVSHMEM híbrida superou a referência em
+CPU a partir de \texttt{SCALE=21}. A biblioteca GPU apresentou ganhos ainda mais
+expressivos: no computador pessoal, alcançou 2,138 GTEPS em \texttt{SCALE=21},
+enquanto a versão híbrida alcançou 0,236604 GTEPS na mesma escala. No ambiente
+GB200, em \texttt{SCALE=29}, a biblioteca GPU alcançou 6,180 GTEPS, contra 1,570
+GTEPS da referência em CPU, além de reduzir o tempo de geração do grafo de 31,13
+s para 2,738 s.
+
+Assim, este trabalho contribui com uma análise da BFS em GPU usando CUDA e
+NVSHMEM, uma implementação compatível com o fluxo do Graph500 e uma versão
+refatorada em biblioteca que reduz a dependência do host durante a travessia. Os
+resultados indicam que mover a coordenação da BFS para a GPU é uma direção
+promissora para travessia distribuída de grafos, embora o desempenho continue
+dependendo de fatores como irregularidade do grafo, comunicação remota,
+sincronização e uso eficiente da memória.

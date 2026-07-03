@@ -1,0 +1,1003 @@
+\section{Proposta de algoritmo para BFS}
+Este trabalho propõe a utilização do algoritmo de BFS em fronteiras, discutido na
+Seção~\ref{sec:bfs-fronteira}. Também é discutida a paralelização do algoritmo
+na Seção~\ref{sec:bfs-paralelizacao}. É proposta uma divisão do grafo entre
+workers na Seção~\ref{sec:bfs-divisao-grafo}, é demonstrado um exemplo de BFS
+paralela na Seção~\ref{sec:bfs-exemplo} e, por último, é discutida a
+implementação do algoritmo em GPUs na Seção~\ref{sec:bfs-gpu}.
+
+\subsection{BFS em Fronteiras}
+\label{sec:bfs-fronteira}
+O algoritmo de BFS também pode ser implementado como uma descoberta por fronteiras. Inicializa-se a primeira fronteira com o vértice inicial. Em seguida, para cada vértice presente na fronteira atual, examinam-se todos os seus vizinhos; aqueles que ainda não foram visitados são adicionados à próxima fronteira. Esse processo se repete sucessivamente, até que a fronteira atual esteja vazia.
+
+Uma versão simplificada do algoritmo é apresentada a seguir:
+
+\begin{lstlisting}
+BFS(G, origem):
+    para cada vertice v em G:
+        pai[v] = none
+
+    pai[origem] = origem
+    fronteira = {origem}
+
+    enquanto fronteira nao esta vazia:
+        proxima_fronteira = vazia
+        para cada vertice u na fronteira:
+            para cada vizinho v de u:
+                se pai[v] == none:
+                    pai[v] = u
+                    adiciona v na proxima_fronteira
+        fronteira = proxima_fronteira
+\end{lstlisting}
+
+\subsection{Exemplo Visual de Fronteiras}
+
+Considere o grafo da Figura~\ref{fig:bfs-step0}. A busca começa no vértice
+\texttt{A}. Em cada passo, os vértices em azul representam a fronteira atual,
+os vértices em cinza já foram visitados em níveis anteriores, e os vértices em
+branco ainda não foram descobertos. As arestas destacadas em azul formam a
+árvore de BFS construída até aquele momento. Essa árvore registra, para cada
+vértice descoberto, qual foi o vértice responsável por sua primeira descoberta.
+Assim, cada aresta azul liga um vértice ao seu pai na busca, permitindo recuperar
+um caminho mínimo, em número de arestas, da origem \texttt{A} até qualquer
+vértice alcançável.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[frontier] (A) at (0,0) {A};
+  \node[undiscovered] (B) at (2,1) {B};
+  \node[undiscovered] (C) at (2,-1) {C};
+  \node[undiscovered] (D) at (4,1.5) {D};
+  \node[undiscovered] (E) at (4,0) {E};
+  \node[undiscovered] (F) at (4,-1.5) {F};
+  \node[undiscovered] (G) at (6,0) {G};
+  \node[undiscovered] (H) at (6,-2) {H};
+
+  \draw[graphedge] (A) -- (B);
+  \draw[graphedge] (A) -- (C);
+  \draw[graphedge] (B) -- (D);
+  \draw[graphedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[graphedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[graphedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+  \draw[graphedge] (F) -- (H);
+\end{tikzpicture}
+\caption{Passo 0 da BFS: a fronteira inicial contém apenas a origem \texttt{A}.}
+\label{fig:bfs-step0}
+\end{figure}
+
+No passo inicial, a distância de \texttt{A} é zero. A primeira expansão examina
+as arestas que saem de \texttt{A}. Como \texttt{B} e \texttt{C} ainda não foram
+visitados, ambos são descobertos, recebem distância um e passam a formar a
+próxima fronteira.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[visited] (A) at (0,0) {A};
+  \node[frontier] (B) at (2,1) {B};
+  \node[frontier] (C) at (2,-1) {C};
+  \node[undiscovered] (D) at (4,1.5) {D};
+  \node[undiscovered] (E) at (4,0) {E};
+  \node[undiscovered] (F) at (4,-1.5) {F};
+  \node[undiscovered] (G) at (6,0) {G};
+  \node[undiscovered] (H) at (6,-2) {H};
+
+  \draw[treeedge] (A) -- (B);
+  \draw[treeedge] (A) -- (C);
+  \draw[graphedge] (B) -- (D);
+  \draw[graphedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[graphedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[graphedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+  \draw[graphedge] (F) -- (H);
+\end{tikzpicture}
+\caption{Passo 1 da BFS: \texttt{B} e \texttt{C} formam a fronteira de nível 1.}
+\label{fig:bfs-step1}
+\end{figure}
+
+No segundo passo, a BFS expande todos os vértices da fronteira atual. O vértice
+\texttt{B} descobre \texttt{D} e \texttt{E}. O vértice \texttt{C} também possui
+uma aresta para \texttt{E}, mas \texttt{E} já pode ter sido descoberto por
+\texttt{B}; nesse caso, a implementação mantém apenas um pai para \texttt{E}.
+O vértice \texttt{C} também descobre \texttt{F}. Assim, a nova fronteira passa a
+ser formada por \texttt{D}, \texttt{E} e \texttt{F}, todos com distância dois.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[visited] (A) at (0,0) {A};
+  \node[visited] (B) at (2,1) {B};
+  \node[visited] (C) at (2,-1) {C};
+  \node[frontier] (D) at (4,1.5) {D};
+  \node[frontier] (E) at (4,0) {E};
+  \node[frontier] (F) at (4,-1.5) {F};
+  \node[undiscovered] (G) at (6,0) {G};
+  \node[undiscovered] (H) at (6,-2) {H};
+
+  \draw[treeedge] (A) -- (B);
+  \draw[treeedge] (A) -- (C);
+  \draw[treeedge] (B) -- (D);
+  \draw[treeedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[treeedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[graphedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+  \draw[graphedge] (F) -- (H);
+\end{tikzpicture}
+\caption{Passo 2 da BFS: \texttt{D}, \texttt{E} e \texttt{F} formam a fronteira de nível 2.}
+\label{fig:bfs-step2}
+\end{figure}
+
+No terceiro passo, a fronteira de nível dois é expandida. Os vértices
+\texttt{D}, \texttt{E} e \texttt{F} possuem arestas para \texttt{G}. O primeiro
+que conseguir registrar \texttt{G} como descoberto define seu pai na árvore de
+BFS. Na figura, \texttt{E} foi escolhido como pai de \texttt{G}, mas
+\texttt{D} ou \texttt{F} também poderiam ser pais válidos, pois todos pertencem
+ao nível anterior. Além disso, \texttt{F} descobre \texttt{H}, que também passa
+a fazer parte da fronteira de nível três.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=1.0]
+  \node[visited] (A) at (0,0) {A};
+  \node[visited] (B) at (2,1) {B};
+  \node[visited] (C) at (2,-1) {C};
+  \node[visited] (D) at (4,1.5) {D};
+  \node[visited] (E) at (4,0) {E};
+  \node[visited] (F) at (4,-1.5) {F};
+  \node[frontier] (G) at (6,0) {G};
+  \node[frontier] (H) at (6,-2) {H};
+
+  \draw[treeedge] (A) -- (B);
+  \draw[treeedge] (A) -- (C);
+  \draw[treeedge] (B) -- (D);
+  \draw[treeedge] (B) -- (E);
+  \draw[graphedge] (C) -- (E);
+  \draw[treeedge] (C) -- (F);
+  \draw[graphedge] (D) -- (G);
+  \draw[treeedge] (E) -- (G);
+  \draw[graphedge] (F) -- (G);
+  \draw[treeedge] (F) -- (H);
+\end{tikzpicture}
+\caption{Passo 3 da BFS: \texttt{G} e \texttt{H} são descobertos no nível 3.}
+\label{fig:bfs-step3}
+\end{figure}
+
+Depois da expansão de \texttt{G}, nenhum novo vértice é encontrado. A próxima
+fronteira fica vazia e o algoritmo termina. O resultado é uma árvore de BFS na
+qual cada vértice alcançável possui um pai em um nível imediatamente anterior ao
+seu.
+
+\subsection{Paralelização}
+\label{sec:bfs-paralelizacao}
+A BFS baseada em fronteiras oferece uma oportunidade natural de paralelismo, todos
+os vértices de uma mesma fronteira podem ser processados simultaneamente, e suas
+arestas podem ser expandidas em paralelo. O principal cuidado é controlar a
+descoberta dos vértices da próxima fronteira, pois múltiplas arestas podem tentar
+descobrir o mesmo vértice ao mesmo tempo. Estratégias de paralelismo e controle foram
+discutidas em \cite{merrillgpu}. 
+
+\subsection{Divisão do Grafo entre Workers}
+\label{sec:bfs-divisao-grafo}
+Neste texto, o termo \textit{worker} é usado de forma geral para representar uma
+unidade de execução capaz de armazenar parte do grafo e realizar parte do trabalho
+da BFS. Um worker pode corresponder, por exemplo, a um processo, uma máquina, uma
+GPU, uma CPU ou outro recurso de execução paralelo. Os detalhes de como esses
+workers são implementados serão discutidos posteriormente. Essa abstração é
+comum em sistemas de processamento paralelo de grafos, nos quais a computação é
+dividida entre unidades que armazenam partes do grafo e trocam informações sobre
+vértices descobertos durante a execução \cite{merrillgpu}.
+
+Em uma implementação paralela ou distribuída, o grafo não precisa ficar inteiro
+em uma única unidade de execução. Uma estratégia comum é dividir seus vértices entre vários
+\textit{workers}. Cada worker fica responsável por armazenar e processar uma
+parte dos vértices e de suas listas de adjacência. Durante a BFS, quando um
+worker expande um vértice local, ele examina suas arestas; se o vizinho pertence
+a outro worker, a descoberta desse vizinho precisa ser comunicada ao worker que
+o possui \cite{merrillgpu}.
+
+Uma forma simples de particionamento é a distribuição cíclica. Com $n_workers$
+workers, o dono de um vértice pode ser calculado por:
+
+\begin{lstlisting}
+worker(v) = v mod n_workers
+\end{lstlisting}
+
+Assim, os vértices são distribuídos de maneira alternada entre os workers. Essa
+estratégia não garante balanceamento perfeito para todos os grafos, mas é simples
+e evita concentrar intervalos inteiros de vértices em um único worker. A
+Tabela~\ref{tab:worker-partition} mostra um exemplo com 16 vértices.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{c|c}
+Worker & Vértices pertencentes ao worker \\
+\hline
+0 & 0, 4, 8, 12 \\
+1 & 1, 5, 9, 13 \\
+2 & 2, 6, 10, 14 \\
+3 & 3, 7, 11, 15 \\
+\end{tabular}
+\caption{Particionamento cíclico de 16 vértices entre 4 workers.}
+\label{tab:worker-partition}
+\end{table}
+
+A Figura~\ref{fig:grafo-global-workers} mostra a visão global de um grafo com 16
+vértices. Essa visão representa o grafo completo antes de considerar qual worker
+é responsável por cada vértice.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.75]
+  \foreach \i/\x/\y in {0/0/3,1/2/3,2/4/3,3/6/3,
+                        4/0/1,5/2/1,6/4/1,7/6/1,
+                        8/0/-1,9/2/-1,10/4/-1,11/6/-1,
+                        12/0/-3,13/2/-3,14/4/-3,15/6/-3} {
+    \node[vertex] (v\i) at (\x,\y) {\i};
+  }
+
+  \draw[graphedge] (v0) -- (v1);
+  \draw[graphedge] (v1) -- (v2);
+  \draw[graphedge] (v2) -- (v3);
+  \draw[graphedge] (v0) -- (v4);
+  \draw[graphedge] (v1) -- (v5);
+  \draw[graphedge] (v2) -- (v6);
+  \draw[graphedge] (v3) -- (v7);
+  \draw[graphedge] (v4) -- (v5);
+  \draw[graphedge] (v5) -- (v6);
+  \draw[graphedge] (v6) -- (v7);
+  \draw[graphedge] (v4) -- (v8);
+  \draw[graphedge] (v5) -- (v9);
+  \draw[graphedge] (v6) -- (v10);
+  \draw[graphedge] (v7) -- (v11);
+  \draw[graphedge] (v8) -- (v9);
+  \draw[graphedge] (v9) -- (v10);
+  \draw[graphedge] (v10) -- (v11);
+  \draw[graphedge] (v8) -- (v12);
+  \draw[graphedge] (v9) -- (v13);
+  \draw[graphedge] (v10) -- (v14);
+  \draw[graphedge] (v11) -- (v15);
+  \draw[graphedge] (v12) -- (v13);
+  \draw[graphedge] (v13) -- (v14);
+  \draw[graphedge] (v14) -- (v15);
+  \draw[graphedge] (v1) -- (v6);
+  \draw[graphedge] (v4) -- (v9);
+  \draw[graphedge] (v6) -- (v11);
+  \draw[graphedge] (v10) -- (v15);
+\end{tikzpicture}
+\caption{Visão global de um grafo com 16 vértices antes do particionamento.}
+\label{fig:grafo-global-workers}
+\end{figure}
+
+A Figura~\ref{fig:grafo-particionado-workers} mostra o mesmo grafo particionado
+entre quatro workers. As cores indicam o dono de cada vértice. As arestas que
+ligam vértices de cores diferentes representam comunicações potenciais durante a
+BFS, pois a expansão de um vértice em um worker pode descobrir um vértice que
+pertence a outro worker.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.75]
+  \foreach \i/\x/\y/\c in {0/0/3/blue!25,1/2/3/red!25,2/4/3/green!25,3/6/3/orange!35,
+                           4/0/1/blue!25,5/2/1/red!25,6/4/1/green!25,7/6/1/orange!35,
+                           8/0/-1/blue!25,9/2/-1/red!25,10/4/-1/green!25,11/6/-1/orange!35,
+                           12/0/-3/blue!25,13/2/-3/red!25,14/4/-3/green!25,15/6/-3/orange!35} {
+    \node[circle, draw, fill=\c, minimum size=8mm, inner sep=0pt] (p\i) at (\x,\y) {\i};
+  }
+
+  \draw[graphedge] (p0) -- (p1);
+  \draw[graphedge] (p1) -- (p2);
+  \draw[graphedge] (p2) -- (p3);
+  \draw[graphedge] (p0) -- (p4);
+  \draw[graphedge] (p1) -- (p5);
+  \draw[graphedge] (p2) -- (p6);
+  \draw[graphedge] (p3) -- (p7);
+  \draw[graphedge] (p4) -- (p5);
+  \draw[graphedge] (p5) -- (p6);
+  \draw[graphedge] (p6) -- (p7);
+  \draw[graphedge] (p4) -- (p8);
+  \draw[graphedge] (p5) -- (p9);
+  \draw[graphedge] (p6) -- (p10);
+  \draw[graphedge] (p7) -- (p11);
+  \draw[graphedge] (p8) -- (p9);
+  \draw[graphedge] (p9) -- (p10);
+  \draw[graphedge] (p10) -- (p11);
+  \draw[graphedge] (p8) -- (p12);
+  \draw[graphedge] (p9) -- (p13);
+  \draw[graphedge] (p10) -- (p14);
+  \draw[graphedge] (p11) -- (p15);
+  \draw[graphedge] (p12) -- (p13);
+  \draw[graphedge] (p13) -- (p14);
+  \draw[graphedge] (p14) -- (p15);
+  \draw[graphedge] (p1) -- (p6);
+  \draw[graphedge] (p4) -- (p9);
+  \draw[graphedge] (p6) -- (p11);
+  \draw[graphedge] (p10) -- (p15);
+
+  \node[draw, fill=blue!25, minimum width=7mm, minimum height=4mm] at (8.2,2.5) {};
+  \node[anchor=west] at (8.7,2.5) {Worker 0};
+  \node[draw, fill=red!25, minimum width=7mm, minimum height=4mm] at (8.2,1.7) {};
+  \node[anchor=west] at (8.7,1.7) {Worker 1};
+  \node[draw, fill=green!25, minimum width=7mm, minimum height=4mm] at (8.2,0.9) {};
+  \node[anchor=west] at (8.7,0.9) {Worker 2};
+  \node[draw, fill=orange!35, minimum width=7mm, minimum height=4mm] at (8.2,0.1) {};
+  \node[anchor=west] at (8.7,0.1) {Worker 3};
+\end{tikzpicture}
+\caption{Mesmo grafo particionado entre 4 workers usando a regra $worker(v) = v \bmod 4$.}
+\label{fig:grafo-particionado-workers}
+\end{figure}
+
+\subsection{Exemplo de BFS Paralela com 4 Workers}
+\label{sec:bfs-exemplo}
+Considere uma BFS iniciada no vértice 0 do grafo particionado da
+Figura~\ref{fig:grafo-particionado-workers}. No passo inicial, apenas o worker 0
+possui trabalho, pois ele é o dono do vértice 0. Ao expandir 0, são descobertos
+os vértices 1 e 4. O vértice 4 pertence ao próprio worker 0, enquanto o vértice 1
+pertence ao worker 1. Portanto, a nova fronteira já fica distribuída entre mais
+de um worker.
+
+Após a expansão dos vértices 1 e 4, a BFS chega ao passo mostrado na
+Figura~\ref{fig:bfs-paralela-step2}. Nesse momento, a fronteira global de
+nível 2 é formada por vértices armazenados em workers diferentes. O worker 0
+possui o vértice 8 na fronteira, o worker 1 possui os vértices 5 e 9, o worker 2
+possui os vértices 2 e 6, e o worker 3 ainda não possui vértices na fronteira
+atual.
+
+A expansão passo a passo é mostrada nas figuras seguintes. Em cada uma delas, a
+fronteira global é dividida entre os quatro workers. Os vértices em azul formam
+a fronteira local do passo atual, os vértices em cinza já foram visitados, e os
+vértices em branco ainda não foram descobertos. Depois que todos os workers
+expandem suas fronteiras locais, os vértices recém-descobertos formam a
+fronteira do próximo nível.
+
+No passo 0, apenas o worker 0 possui trabalho, pois a origem 0 pertence a ele.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  \draw[rounded corners] (-0.8,-0.8) rectangle (5.0,3.4);
+  \node[anchor=west] at (-0.6,3.05) {Worker 0};
+  \node[frontier] (s0w0v0) at (0,2) {0};
+  \node[undiscovered] (s0w0v4) at (2,2) {4};
+  \node[undiscovered] (s0w0v8) at (0,0.5) {8};
+  \node[undiscovered] (s0w0v12) at (2,0.5) {12};
+  \node[anchor=west] at (-0.6,-0.45) {Fronteira local: \{0\}};
+
+  \draw[rounded corners] (6.0,-0.8) rectangle (11.8,3.4);
+  \node[anchor=west] at (6.2,3.05) {Worker 1};
+  \node[undiscovered] at (6.8,2) {1};
+  \node[undiscovered] at (8.8,2) {5};
+  \node[undiscovered] at (6.8,0.5) {9};
+  \node[undiscovered] at (8.8,0.5) {13};
+  \node[anchor=west] at (6.2,-0.45) {Fronteira local: vazia};
+
+  \draw[rounded corners] (-0.8,-6.2) rectangle (5.0,-2.0);
+  \node[anchor=west] at (-0.6,-2.35) {Worker 2};
+  \node[undiscovered] at (0,-3.4) {2};
+  \node[undiscovered] at (2,-3.4) {6};
+  \node[undiscovered] at (0,-4.9) {10};
+  \node[undiscovered] at (2,-4.9) {14};
+  \node[anchor=west] at (-0.6,-5.85) {Fronteira local: vazia};
+
+  \draw[rounded corners] (6.0,-6.2) rectangle (11.8,-2.0);
+  \node[anchor=west] at (6.2,-2.35) {Worker 3};
+  \node[undiscovered] at (6.8,-3.4) {3};
+  \node[undiscovered] at (8.8,-3.4) {7};
+  \node[undiscovered] at (6.8,-4.9) {11};
+  \node[undiscovered] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: vazia};
+\end{tikzpicture}
+\caption{Passo 0 da BFS paralela: apenas a origem 0 está na fronteira.}
+\label{fig:bfs-paralela-step0}
+\end{figure}
+
+Ao expandir 0, são descobertos 1 e 4. O vértice 4 permanece no worker 0, e o
+vértice 1 passa a compor a fronteira local do worker 1.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  \draw[rounded corners] (-0.8,-0.8) rectangle (5.0,3.4);
+  \node[anchor=west] at (-0.6,3.05) {Worker 0};
+  \node[visited] at (0,2) {0};
+  \node[frontier] at (2,2) {4};
+  \node[undiscovered] at (0,0.5) {8};
+  \node[undiscovered] at (2,0.5) {12};
+  \node[anchor=west] at (-0.6,-0.45) {Fronteira local: \{4\}};
+
+  \draw[rounded corners] (6.0,-0.8) rectangle (11.8,3.4);
+  \node[anchor=west] at (6.2,3.05) {Worker 1};
+  \node[frontier] at (6.8,2) {1};
+  \node[undiscovered] at (8.8,2) {5};
+  \node[undiscovered] at (6.8,0.5) {9};
+  \node[undiscovered] at (8.8,0.5) {13};
+  \node[anchor=west] at (6.2,-0.45) {Fronteira local: \{1\}};
+
+  \draw[rounded corners] (-0.8,-6.2) rectangle (5.0,-2.0);
+  \node[anchor=west] at (-0.6,-2.35) {Worker 2};
+  \node[undiscovered] at (0,-3.4) {2};
+  \node[undiscovered] at (2,-3.4) {6};
+  \node[undiscovered] at (0,-4.9) {10};
+  \node[undiscovered] at (2,-4.9) {14};
+  \node[anchor=west] at (-0.6,-5.85) {Fronteira local: vazia};
+
+  \draw[rounded corners] (6.0,-6.2) rectangle (11.8,-2.0);
+  \node[anchor=west] at (6.2,-2.35) {Worker 3};
+  \node[undiscovered] at (6.8,-3.4) {3};
+  \node[undiscovered] at (8.8,-3.4) {7};
+  \node[undiscovered] at (6.8,-4.9) {11};
+  \node[undiscovered] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: vazia};
+\end{tikzpicture}
+\caption{Passo 1 da BFS paralela: os workers 0 e 1 possuem vértices na fronteira.}
+\label{fig:bfs-paralela-step1}
+\end{figure}
+
+No passo 1, os workers 0 e 1 trabalham ao mesmo tempo: 4 descobre 8 e 9,
+enquanto 1 descobre 2, 5 e 6. O vértice 5 também é vizinho de 4, mas basta que
+uma das tentativas de descoberta seja aceita para que ele entre na próxima
+fronteira. No passo 2, já há trabalho em três workers diferentes.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  \draw[rounded corners] (-0.8,-0.8) rectangle (5.0,3.4);
+  \node[anchor=west] at (-0.6,3.05) {Worker 0};
+  \node[visited] (w0v0) at (0,2) {0};
+  \node[visited] (w0v4) at (2,2) {4};
+  \node[frontier] (w0v8) at (0,0.5) {8};
+  \node[undiscovered] (w0v12) at (2,0.5) {12};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w0g1) at (4,2.8) {1};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w0g9) at (4,0.5) {9};
+  \draw[treeedge] (w0v0) -- (w0v4);
+  \draw[treeedge] (w0v4) -- (w0v8);
+  \draw[graphedge] (w0v8) -- (w0v12);
+  \draw[graphedge, dashed] (w0v0) -- (w0g1);
+  \draw[graphedge, dashed] (w0v4) -- (w0g9);
+  \node[anchor=west] at (-0.6,-0.45) {Fronteira local: \{8\}};
+
+  \draw[rounded corners] (6.0,-0.8) rectangle (11.8,3.4);
+  \node[anchor=west] at (6.2,3.05) {Worker 1};
+  \node[visited] (w1v1) at (6.8,2) {1};
+  \node[frontier] (w1v5) at (8.8,2) {5};
+  \node[frontier] (w1v9) at (6.8,0.5) {9};
+  \node[undiscovered] (w1v13) at (8.8,0.5) {13};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w1g0) at (10.8,2.8) {0};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w1g6) at (10.8,1.3) {6};
+  \draw[treeedge] (w1v1) -- (w1v5);
+  \draw[treeedge] (w1v5) -- (w1v9);
+  \draw[graphedge] (w1v9) -- (w1v13);
+  \draw[graphedge, dashed] (w1v1) -- (w1g0);
+  \draw[graphedge, dashed] (w1v1) -- (w1g6);
+  \node[anchor=west] at (6.2,-0.45) {Fronteira local: \{5, 9\}};
+
+  \draw[rounded corners] (-0.8,-6.2) rectangle (5.0,-2.0);
+  \node[anchor=west] at (-0.6,-2.35) {Worker 2};
+  \node[frontier] (w2v2) at (0,-3.4) {2};
+  \node[frontier] (w2v6) at (2,-3.4) {6};
+  \node[undiscovered] (w2v10) at (0,-4.9) {10};
+  \node[undiscovered] (w2v14) at (2,-4.9) {14};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w2g1) at (4,-2.6) {1};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w2g7) at (4,-4.2) {7};
+  \draw[treeedge] (w2g1) -- (w2v2);
+  \draw[treeedge] (w2g1) -- (w2v6);
+  \draw[graphedge] (w2v6) -- (w2v10);
+  \draw[graphedge] (w2v10) -- (w2v14);
+  \draw[graphedge, dashed] (w2v6) -- (w2g7);
+  \node[anchor=west] at (-0.6,-5.85) {Fronteira local: \{2, 6\}};
+
+  \draw[rounded corners] (6.0,-6.2) rectangle (11.8,-2.0);
+  \node[anchor=west] at (6.2,-2.35) {Worker 3};
+  \node[undiscovered] (w3v3) at (6.8,-3.4) {3};
+  \node[undiscovered] (w3v7) at (8.8,-3.4) {7};
+  \node[undiscovered] (w3v11) at (6.8,-4.9) {11};
+  \node[undiscovered] (w3v15) at (8.8,-4.9) {15};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w3g2) at (10.8,-2.6) {2};
+  \node[draw, dashed, circle, minimum size=8mm, inner sep=0pt] (w3g6) at (10.8,-4.2) {6};
+  \draw[graphedge] (w3v3) -- (w3v7);
+  \draw[graphedge] (w3v7) -- (w3v11);
+  \draw[graphedge] (w3v11) -- (w3v15);
+  \draw[graphedge, dashed] (w3g2) -- (w3v3);
+  \draw[graphedge, dashed] (w3g6) -- (w3v7);
+  \draw[graphedge, dashed] (w3g6) -- (w3v11);
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: vazia};
+\end{tikzpicture}
+\caption{Passo 2 da BFS paralela: a fronteira global está distribuída entre os workers 0, 1 e 2. Vértices tracejados representam vizinhos remotos mantidos apenas para ilustrar comunicações entre workers.}
+\label{fig:bfs-paralela-step2}
+\end{figure}
+
+No passo 2, a expansão dos vértices 2 e 6 no worker 2 gera trabalho para o
+worker 3, pois existem arestas para os vértices 3, 7 e 11. Ao mesmo tempo, os
+workers 0, 1 e 2 descobrem outros vértices locais, formando a próxima fronteira.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  \draw[rounded corners] (-0.8,-0.8) rectangle (5.0,3.4);
+  \node[anchor=west] at (-0.6,3.05) {Worker 0};
+  \node[visited] at (0,2) {0};
+  \node[visited] at (2,2) {4};
+  \node[visited] at (0,0.5) {8};
+  \node[frontier] at (2,0.5) {12};
+  \node[anchor=west] at (-0.6,-0.45) {Fronteira local: \{12\}};
+
+  \draw[rounded corners] (6.0,-0.8) rectangle (11.8,3.4);
+  \node[anchor=west] at (6.2,3.05) {Worker 1};
+  \node[visited] at (6.8,2) {1};
+  \node[visited] at (8.8,2) {5};
+  \node[visited] at (6.8,0.5) {9};
+  \node[frontier] at (8.8,0.5) {13};
+  \node[anchor=west] at (6.2,-0.45) {Fronteira local: \{13\}};
+
+  \draw[rounded corners] (-0.8,-6.2) rectangle (5.0,-2.0);
+  \node[anchor=west] at (-0.6,-2.35) {Worker 2};
+  \node[visited] at (0,-3.4) {2};
+  \node[visited] at (2,-3.4) {6};
+  \node[frontier] at (0,-4.9) {10};
+  \node[undiscovered] at (2,-4.9) {14};
+  \node[anchor=west] at (-0.6,-5.85) {Fronteira local: \{10\}};
+
+  \draw[rounded corners] (6.0,-6.2) rectangle (11.8,-2.0);
+  \node[anchor=west] at (6.2,-2.35) {Worker 3};
+  \node[frontier] at (6.8,-3.4) {3};
+  \node[frontier] at (8.8,-3.4) {7};
+  \node[frontier] at (6.8,-4.9) {11};
+  \node[undiscovered] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{3, 7, 11\}};
+\end{tikzpicture}
+\caption{Passo 3 da BFS paralela: todos os workers possuem vértices na fronteira.}
+\label{fig:bfs-paralela-step3}
+\end{figure}
+
+Após o passo 3, apenas os workers 2 e 3 continuam com novos vértices a expandir.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  \draw[rounded corners] (-0.8,-0.8) rectangle (5.0,3.4);
+  \node[anchor=west] at (-0.6,3.05) {Worker 0};
+  \node[visited] at (0,2) {0};
+  \node[visited] at (2,2) {4};
+  \node[visited] at (0,0.5) {8};
+  \node[visited] at (2,0.5) {12};
+  \node[anchor=west] at (-0.6,-0.45) {Fronteira local: vazia};
+
+  \draw[rounded corners] (6.0,-0.8) rectangle (11.8,3.4);
+  \node[anchor=west] at (6.2,3.05) {Worker 1};
+  \node[visited] at (6.8,2) {1};
+  \node[visited] at (8.8,2) {5};
+  \node[visited] at (6.8,0.5) {9};
+  \node[visited] at (8.8,0.5) {13};
+  \node[anchor=west] at (6.2,-0.45) {Fronteira local: vazia};
+
+  \draw[rounded corners] (-0.8,-6.2) rectangle (5.0,-2.0);
+  \node[anchor=west] at (-0.6,-2.35) {Worker 2};
+  \node[visited] at (0,-3.4) {2};
+  \node[visited] at (2,-3.4) {6};
+  \node[visited] at (0,-4.9) {10};
+  \node[frontier] at (2,-4.9) {14};
+  \node[anchor=west] at (-0.6,-5.85) {Fronteira local: \{14\}};
+
+  \draw[rounded corners] (6.0,-6.2) rectangle (11.8,-2.0);
+  \node[anchor=west] at (6.2,-2.35) {Worker 3};
+  \node[visited] at (6.8,-3.4) {3};
+  \node[visited] at (8.8,-3.4) {7};
+  \node[visited] at (6.8,-4.9) {11};
+  \node[frontier] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: \{15\}};
+\end{tikzpicture}
+\caption{Passo 4 da BFS paralela: apenas os workers 2 e 3 continuam com fronteiras locais.}
+\label{fig:bfs-paralela-step4}
+\end{figure}
+
+Por fim, a expansão de 14 e 15 não produz novas descobertas. Nesse ponto, a
+próxima fronteira fica vazia e a BFS termina.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[scale=0.72]
+  \draw[rounded corners] (-0.8,-0.8) rectangle (5.0,3.4);
+  \node[anchor=west] at (-0.6,3.05) {Worker 0};
+  \node[visited] at (0,2) {0};
+  \node[visited] at (2,2) {4};
+  \node[visited] at (0,0.5) {8};
+  \node[visited] at (2,0.5) {12};
+  \node[anchor=west] at (-0.6,-0.45) {Fronteira local: vazia};
+
+  \draw[rounded corners] (6.0,-0.8) rectangle (11.8,3.4);
+  \node[anchor=west] at (6.2,3.05) {Worker 1};
+  \node[visited] at (6.8,2) {1};
+  \node[visited] at (8.8,2) {5};
+  \node[visited] at (6.8,0.5) {9};
+  \node[visited] at (8.8,0.5) {13};
+  \node[anchor=west] at (6.2,-0.45) {Fronteira local: vazia};
+
+  \draw[rounded corners] (-0.8,-6.2) rectangle (5.0,-2.0);
+  \node[anchor=west] at (-0.6,-2.35) {Worker 2};
+  \node[visited] at (0,-3.4) {2};
+  \node[visited] at (2,-3.4) {6};
+  \node[visited] at (0,-4.9) {10};
+  \node[visited] at (2,-4.9) {14};
+  \node[anchor=west] at (-0.6,-5.85) {Fronteira local: vazia};
+
+  \draw[rounded corners] (6.0,-6.2) rectangle (11.8,-2.0);
+  \node[anchor=west] at (6.2,-2.35) {Worker 3};
+  \node[visited] at (6.8,-3.4) {3};
+  \node[visited] at (8.8,-3.4) {7};
+  \node[visited] at (6.8,-4.9) {11};
+  \node[visited] at (8.8,-4.9) {15};
+  \node[anchor=west] at (6.2,-5.85) {Fronteira local: vazia};
+\end{tikzpicture}
+\caption{Passo 5 da BFS paralela: a fronteira global fica vazia e a busca termina.}
+\label{fig:bfs-paralela-step5}
+\end{figure}
+
+Essa sequência visual mostra que a fronteira global da BFS é a união das
+fronteiras locais de cada worker. Em uma implementação paralela, cada worker
+expande apenas os vértices da sua fronteira local. Quando uma aresta aponta para
+um vértice remoto, a atualização precisa ser enviada ao worker dono daquele
+vértice, que poderá processá-lo no próximo passo. Essa organização preserva a
+ideia de avanço por níveis da BFS, mas distribui o trabalho e a comunicação entre
+as unidades de execução disponíveis.
+
+\subsection{BFS em GPU}
+\label{sec:bfs-gpu}
+GPUs modernas são otimizadas para executar operações computacionalmente intensivas 
+com muitos grupos de threads em paralelo e dependem de concorrência para esconder 
+atrasos de memória. No modelo da NVIDIA, threads são agrupadas em \textit{warps}, 
+que executam uma mesma instrução sobre dados diferentes, e em blocos de threads, 
+que podem compartilhar memória local no multiprocessador. Esse modelo favorece 
+cargas de trabalho com grande quantidade de operações independentes e com acesso 
+à memória bem organizado \cite{merrillgpu}.
+
+A BFS é atraente para GPUs porque a expansão de uma fronteira pode expor muito
+paralelismo. Em uma mesma iteração, vários vértices da fronteira atual podem ser
+expandidos simultaneamente, e as arestas incidentes a esses vértices também podem
+ser examinadas em paralelo. Quando a fronteira é grande, há trabalho suficiente
+para ocupar muitos multiprocessadores. 
+
+Apesar disso, grafos esparsos tornam a BFS difícil em GPU. O padrão de acesso à
+memória depende da estrutura do grafo, não de um arranjo regular como em vetores
+ou matrizes densas. Ao expandir um vértice, as threads seguem listas de
+adjacência que podem apontar para regiões distantes da memória. Além disso, grafos
+reais frequentemente possuem distribuição de grau irregular; alguns vértices têm
+poucos vizinhos, enquanto outros concentram muitos. Se uma thread ou um warp recebe 
+um vértice de grau muito maior que os demais, ocorre desbalanceamento de carga e 
+parte da GPU pode ficar subutilizada \cite{merrillgpu}.
+
+Uma forma simples de paralelizar BFS é fazer cada iteração inspecionar todos os 
+vértices ou todas as arestas do grafo, procurando quais deles pertencem ao nível atual. 
+Essa estratégia se ajusta facilmente ao modelo de dados paralelos da GPU, mas pode
+executar trabalho quadrático no pior caso, pois o mesmo grafo é varrido repetidas
+vezes ao longo dos níveis da busca. Para grafos com diâmetro não trivial, esse
+custo se torna alto. Uma implementação eficiente deve examinar apenas os vértices
+e arestas que pertencem às fronteiras ativas de cada iteração, mantendo custo
+linear em relação ao número de vértices e arestas, isto é, $O(|V| + |E|)$
+\cite{merrillgpu}.
+
+Do ponto de vista de desempenho, permitir muitas descobertas duplicadas de um mesmo 
+vértice pode gerar trabalho redundante, pois o mesmo vértice pode ser inserido mais 
+de uma vez na fronteira e sua lista de adjacência pode ser expandida repetidamente. 
+Por isso, implementações em GPU costumam usar mecanismos de filtragem, marcação e 
+remoção local de duplicatas para reduzir esse efeito \cite{merrillgpu}.
+
+Portanto, a BFS em GPU deve equilibrar três objetivos. Primeiro, preservar a
+estrutura por níveis da BFS, garantindo que a próxima fronteira contenha apenas
+vértices descobertos a partir da fronteira atual. Segundo, manter eficiência de
+trabalho, evitando varrer o grafo inteiro a cada iteração. Terceiro, adaptar a
+execução irregular do grafo ao modelo de hardware da GPU, organizando fronteiras,
+trabalho e comunicação de forma a reduzir desbalanceamento, contenção e acessos
+ineficientes à memória
+\cite{merrillgpu}.
+
+\section{Implementação do Graph500 em GPU}
+Um dos objetivos deste trabalho foi implementar uma versão em GPU dos kernels do
+benchmark Graph500 utilizando CUDA e NVSHMEM. Como discutido na
+Seção~\ref{sec:graph500-intro}, o Graph500 avalia sistemas a partir de cargas de
+trabalho centradas em grafos, incluindo a construção de uma estrutura interna para
+o grafo e a execução de buscas em largura. A implementação desenvolvida neste
+trabalho mantém essa organização geral: o Kernel 1 constrói uma representação do
+grafo a partir da lista de arestas, enquanto o Kernel 2 executa a BFS a partir
+das raízes selecionadas pelo benchmark.
+
+A implementação foi baseada na versão de referência do Graph500, disponível em
+\url{https://github.com/graph500/graph500}, mas substitui parte do processamento
+por kernels CUDA e operações de comunicação NVSHMEM. A versão desenvolvida neste
+trabalho está disponível em
+\url{https://github.com/RuanPetrus/graph500/tree/feat/nvshem-implementation}, na
+branch \texttt{feat/nvshem-implementation}. O foco da implementação está nos
+Kernels 1 e 2 do benchmark. Uma versão do Kernel 3 com NVSHMEM também foi
+implementada experimentalmente, mas ela não é o objeto principal desta
+monografia, pois o trabalho concentra-se na busca em largura.
+
+O uso de NVSHMEM é motivado pelo modelo apresentado na Seção~\ref{sec:nvshmem}.
+Em uma BFS distribuída, a expansão de uma aresta pode descobrir um vértice cujo
+estado pertence a outro elemento de processamento. Em uma implementação baseada
+apenas em MPI, esse tipo de atualização normalmente precisa ser coordenado pelo
+host. Com NVSHMEM, uma thread executando em um kernel CUDA pode emitir operações
+remotas diretamente para a memória de outro PE, reduzindo a necessidade de
+transferir cada descoberta remota para a CPU antes da comunicação.
+
+\subsection{Modelo de execução}
+
+A implementação utiliza um modelo em que cada processo participante do benchmark
+é associado a um PE do NVSHMEM e a uma GPU. Cada PE armazena uma partição do
+grafo e executa kernels CUDA para processar os vértices sob sua responsabilidade.
+A divisão dos vértices segue a estratégia cíclica discutida na
+Seção~\ref{sec:bfs-divisao-grafo}: o dono de um vértice é determinado pelo resto
+da divisão entre o identificador global do vértice e o número total de workers.
+Com isso, cada PE consegue calcular localmente qual worker é responsável por uma
+descoberta produzida durante a BFS.
+
+Esse modelo combina três níveis de execução. A CPU inicializa MPI, CUDA e
+NVSHMEM, seleciona o dispositivo associado ao processo e coordena as etapas de
+alto nível do benchmark. A GPU executa a expansão das fronteiras da BFS em
+paralelo. O NVSHMEM fornece as operações de comunicação entre PEs, permitindo que
+uma GPU atualize dados remotos quando uma aresta aponta para um vértice
+armazenado por outro worker.
+
+\subsection{Kernel 1}
+
+O Kernel 1 do Graph500 corresponde à construção da estrutura interna do grafo a
+partir da lista de arestas gerada pelo benchmark, conforme discutido na
+Seção~\ref{sec:graph500-kernel1}. Na implementação desenvolvida, essa etapa
+preserva a semântica da versão de referência: a entrada continua sendo uma lista
+de tuplas de arestas, e a saída é uma estrutura adequada para executar as buscas
+dos kernels seguintes.
+
+Para a execução em GPU, o grafo é convertido para uma representação baseada em
+CSR (\textit{Compressed Sparse Row}). Essa representação utiliza um vetor de
+deslocamentos para indicar onde começa a lista de adjacência de cada vértice e um
+vetor de colunas para armazenar os vizinhos. A escolha por CSR é adequada para a
+BFS porque permite localizar rapidamente os vizinhos de um vértice expandido, o
+que é essencial durante o processamento das fronteiras.
+
+Após a construção da representação do grafo, os dados necessários para a busca
+são alocados ou copiados para a memória da GPU associada ao PE. Cada worker
+mantém a parte do grafo correspondente aos seus vértices locais, de acordo com a
+distribuição cíclica. Dessa forma, quando o Kernel 2 expande um vértice local, a
+lista de adjacência necessária para essa expansão já se encontra disponível na
+GPU.
+
+Embora o Kernel 1 não execute a BFS propriamente dita, ele influencia diretamente
+o desempenho do Kernel 2. Uma representação inadequada pode aumentar o número de
+acessos indiretos à memória, desperdiçar largura de banda ou dificultar o
+balanceamento entre threads. Por isso, a etapa de construção do grafo foi mantida
+compatível com a especificação do Graph500, mas organizada de modo a permitir que
+a expansão das fronteiras ocorra na GPU.
+
+\subsection{Kernel 2}
+
+O Kernel 2 corresponde à execução da busca em largura, descrita na
+Seção~\ref{sec:graph500-kernel2}. A implementação utiliza o algoritmo baseado em
+fronteiras discutido na Seção~\ref{sec:bfs-fronteira}. Em cada nível da BFS,
+existe uma fronteira atual contendo os vértices descobertos no nível anterior.
+Esses vértices são expandidos em paralelo, e os vizinhos ainda não visitados
+formam a próxima fronteira.
+
+Na versão implementada, cada PE mantém uma fronteira local. A fronteira global da
+BFS é a união das fronteiras locais de todos os PEs, como apresentado na
+Seção~\ref{sec:bfs-exemplo}. Um kernel CUDA é lançado para expandir os vértices
+da fronteira local. Durante essa expansão, as threads percorrem as listas de
+adjacência dos vértices ativos e tentam registrar os vizinhos ainda não
+descobertos no vetor de predecessores.
+
+Quando o vizinho pertence ao mesmo PE, a atualização é local. Quando o vizinho
+pertence a outro PE, a thread utiliza uma operação NVSHMEM para tentar atualizar
+o estado remoto desse vértice. Essa atualização precisa ser feita de forma
+atômica, pois múltiplas threads, possivelmente em GPUs diferentes, podem tentar
+descobrir o mesmo vértice no mesmo nível da BFS. Apenas uma dessas tentativas
+deve definir o predecessor do vértice; as demais devem perceber que o vértice já
+foi descoberto e não devem inseri-lo novamente como uma nova descoberta válida.
+
+De forma simplificada, a execução do Kernel 2 segue o fluxo abaixo:
+
+\begin{lstlisting}
+para cada raiz selecionada pelo Graph500:
+    inicializa o vetor de predecessores
+    inicializa a fronteira com a raiz
+
+    enquanto a fronteira global nao esta vazia:
+        cada PE expande sua fronteira local na GPU
+        para cada aresta (u, v) encontrada:
+            dono = worker(v)
+            se v ainda nao foi descoberto:
+                registra u como predecessor de v
+                adiciona v na proxima fronteira do dono
+        sincroniza os PEs
+        fronteira atual = proxima fronteira
+\end{lstlisting}
+
+Essa organização preserva a semântica da BFS por níveis: os vértices inseridos na
+próxima fronteira foram descobertos exclusivamente a partir da fronteira atual.
+Ao mesmo tempo, a expansão das arestas é paralelizada na GPU, explorando o grande
+número de operações independentes presentes em fronteiras grandes.
+
+\subsection{Sincronização e comunicação}
+
+A implementação do Kernel 2 utiliza um modelo híbrido entre CPU e GPU. A expansão
+de cada fronteira é feita por kernels CUDA, e as atualizações remotas de vértices
+são emitidas por operações NVSHMEM diretamente a partir da GPU. Entretanto, a CPU
+ainda participa da coordenação entre os níveis da BFS. Ao final de cada nível, é
+necessário determinar se a próxima fronteira global está vazia. Caso todos os PEs
+estejam sem novos vértices, a BFS termina; caso contrário, a próxima fronteira
+passa a ser a fronteira atual do nível seguinte.
+
+Essa sincronização global é necessária para preservar a propriedade de níveis da
+BFS e para atender à especificação do Graph500. Porém, ela também representa uma
+fonte de custo. Grafos com muitos níveis exigem mais sincronizações, enquanto
+grafos com fronteiras grandes tendem a expor mais paralelismo por nível. Assim, o
+desempenho da implementação depende tanto do custo de expansão das arestas quanto
+do custo de comunicação e sincronização entre PEs.
+
+\subsection{Compatibilidade e limitações}
+
+A implementação procura manter compatibilidade com o fluxo do Graph500 descrito
+na Seção~\ref{sec:graph500-fluxo}. A geração do grafo, a construção da estrutura
+interna, a execução das buscas e a validação continuam seguindo a organização do
+benchmark. O resultado do Kernel 2 também mantém o formato esperado pelo
+Graph500: uma árvore de BFS representada por predecessores, na qual a raiz aponta
+para si mesma e vértices não alcançáveis permanecem sem predecessor válido,
+conforme discutido na Seção~\ref{sec:graph500-validacao}.
+
+Essa versão do Graph500 em GPU serviu como base experimental para a biblioteca
+proposta neste trabalho. A partir dela foram identificadas as principais
+necessidades de uma implementação distribuída de travessia de grafos em GPU:
+alocação de memória acessível por múltiplos PEs, representação distribuída do
+grafo, expansão paralela de fronteiras, comunicação remota iniciada no dispositivo
+e validação dos resultados produzidos. A seção seguinte apresenta a biblioteca
+desenvolvida a partir dessas necessidades.
+
+\section{Biblioteca de Travessia de Grafos Exclusiva em GPU}
+\label{sec:biblioteca-gpu}
+
+A segunda etapa do desenvolvimento consistiu em refatorar a implementação
+experimental do Graph500 em direção a uma biblioteca de travessia de grafos para
+GPU. O objetivo dessa refatoração foi separar as principais responsabilidades do
+programa em componentes conceituais mais claros: inicialização do ambiente
+paralelo, gerenciamento de memória, geração do grafo, construção da representação
+interna, execução da BFS, validação e apoio experimental.
+
+A biblioteca foi projetada para manter os dados na GPU sempre que possível. O
+host ainda é responsável por tarefas de controle, como inicialização do ambiente,
+seleção de dispositivos, disparo das etapas principais e coleta de métricas. No
+entanto, a geração do grafo, a construção da estrutura distribuída e a execução
+da BFS são realizadas por kernels CUDA e por operações NVSHMEM. Dessa forma, a
+biblioteca reduz a participação da CPU no caminho crítico da busca e se aproxima
+do modelo apresentado na Seção~\ref{sec:nvshmem}, no qual a comunicação pode ser
+iniciada diretamente pelo dispositivo.
+
+O Graph500 foi mantido como caso de uso principal. Assim, a biblioteca preserva
+um fluxo compatível com o benchmark discutido na Seção~\ref{sec:graph500-fluxo}:
+geração da lista de arestas, construção da estrutura interna do grafo, seleção de
+raízes, execução da BFS, validação e cálculo de métricas.
+
+\subsection{Inicialização e workers}
+
+A execução distribuída é organizada em workers. Neste trabalho, cada worker
+representa uma unidade de execução associada a um processo, a um PE do NVSHMEM e
+a uma GPU. Durante a inicialização, cada worker identifica sua posição no
+conjunto global de processos, seleciona um dispositivo CUDA e participa da
+inicialização coletiva do ambiente de comunicação.
+
+\subsection{Arenas simétricas e síncronas}
+
+A biblioteca utiliza arenas como mecanismo principal de alocação de memória. Uma
+arena mantém um ponteiro base, a capacidade reservada e a quantidade já utilizada.
+Novas alocações são feitas avançando esse ponteiro interno com alinhamento
+adequado. Essa estratégia reduz o número de chamadas individuais de alocação e
+simplifica o gerenciamento de buffers temporários usados durante a geração do
+grafo, conversão para CSR, BFS e validação.
+
+Como o NVSHMEM exige simetria nas alocações, a biblioteca não aloca simplesmente
+o tamanho local necessário em cada PE. Antes de uma alocação distribuída, os
+workers determinam coletivamente o maior tamanho solicitado. Todos então avançam
+suas arenas pelo mesmo tamanho máximo. Isso preserva a simetria da região alocada
+e permite que um PE calcule corretamente o endereço remoto correspondente a um
+endereço local.
+
+\subsection{Gerador R-MAT}
+\label{sec:bib-gerador}
+
+A biblioteca implementa em CUDA o gerador de grafos Kronecker/R-MAT utilizado
+pelo Graph500, descrito na Seção~\ref{sec:graph500-geracao-grafo}. A entrada da
+geração é definida por dois parâmetros principais: \texttt{SCALE}, que determina
+o número global de vértices, e \texttt{edgefactor}, que determina o número global
+de arestas. Cada PE recebe um intervalo da lista global de arestas e gera apenas
+as arestas pertencentes a esse intervalo.
+
+Para cada aresta, o kernel CUDA avança o estado pseudoaleatório até a
+posição correspondente, escolhe recursivamente os quadrantes da matriz de
+adjacência conforme os parâmetros iniciadores do R-MAT e aplica a permutação dos
+identificadores de vértices. O resultado é armazenado como uma lista distribuída
+de arestas, acompanhada dos pesos usados pelas etapas posteriores do benchmark.
+
+A geração é paralelizada por aresta. Cada thread CUDA é responsável por produzir
+uma ou mais arestas, permitindo que a etapa de geração explore o paralelismo
+disponível na GPU. 
+
+\subsection{Conversão do grafo para CSR}
+\label{sec:bib-csr}
+
+Após a geração da lista de arestas, a biblioteca converte o grafo para uma
+representação distribuída baseada em CSR. Cada worker armazena os vértices que
+lhe pertencem, suas listas de adjacência e os pesos associados às arestas. O
+formato é semelhante ao CSR discutido na Seção~\ref{sec:graph500-kernel1}, mas
+aplicado a uma distribuição unidimensional cíclica dos vértices.
+
+A conversão ocorre em duas etapas principais. Primeiro, um kernel percorre a
+lista de arestas e calcula o grau de cada vértice. Como uma aresta pode conectar
+vértices pertencentes a PEs diferentes, o cálculo de grau usa operações atômicas
+NVSHMEM para incrementar o contador no PE dono do vértice. Arestas de laço, nas
+quais origem e destino são iguais, são ignoradas nessa etapa.
+
+Em seguida, os graus são transformados em deslocamentos para as listas de
+adjacência. Depois disso, a biblioteca aloca as listas de adjacência e
+executa uma segunda etapa para preenchê-las.
+
+O preenchimento das listas também usa operações NVSHMEM. Para cada direção da
+aresta, o kernel identifica o PE dono do vértice de origem, incrementa
+atomicamente o deslocamento dentro da linha correspondente e escreve o vizinho no
+espaço remoto correspondente. Esse procedimento permite construir a estrutura CSR
+distribuída diretamente a partir da GPU, sem primeiro reunir a lista completa de
+arestas no host.
+
+\subsection{Kernel 2 exclusivo em GPU}
+\label{sec:bib-kernel2}
+
+A principal diferença entre a biblioteca refatorada e a versão híbrida anterior
+está na execução do Kernel 2. Na versão descrita na seção anterior, o host ainda
+controlava a passagem entre fronteiras da BFS. Na versão refatorada, um kernel
+CUDA coletivo mantém o laço principal da BFS dentro da GPU. Assim, a CPU não
+precisa lançar um novo kernel a cada nível da busca.
+
+O estado da BFS contém o vetor de predecessores, duas fronteiras, contadores
+locais, um contador global de fronteira e variáveis auxiliares usadas para
+sincronização no dispositivo. O uso de duas fronteiras permite alternar entre a
+fronteira atual e a próxima fronteira sem realocar memória durante a busca.
+
+Dentro do kernel, a raiz é inserida na fronteira inicial pelo PE que possui o
+vértice. A cada iteração, os PEs somam suas quantidades locais de vértices ativos
+em um contador global armazenado em memória simétrica. Se esse contador for zero,
+a BFS termina. Caso contrário, cada PE expande sua fronteira local. A expansão é
+organizada para que grupos de threads cooperem no processamento dos vértices
+ativos e de suas listas de adjacência, reduzindo a ociosidade causada por
+vértices com graus diferentes.
+
+Para cada vizinho encontrado, o kernel calcula o PE dono pela regra de
+distribuição cíclica. A descoberta é registrada por meio de uma operação atômica
+de comparação e troca sobre o vetor de predecessores do PE dono. Se o valor
+anterior indicava que o vértice ainda não havia sido descoberto, a thread que
+realizou a atualização foi a primeira a descobrir o vértice. Nesse caso, o
+vértice é inserido na próxima fronteira do PE dono por meio de uma operação
+atômica de incremento no contador remoto da fronteira.
+
+O kernel também implementa sincronização no dispositivo. Existem barreiras locais
+entre blocos do mesmo PE e barreiras globais NVSHMEM entre PEs. Essas barreiras
+garantem que todas as atualizações da fronteira atual estejam visíveis antes da
+troca entre a fronteira atual e a próxima fronteira. Dessa forma, a biblioteca
+preserva a propriedade por níveis da BFS sem retornar ao host entre níveis.
+
+\subsection{Cálculo de distâncias e validação}
+\label{sec:bib-validacao}
+
+O resultado principal da BFS é o vetor de predecessores, pois esse é o formato
+esperado pelo Kernel 2 do Graph500. Para fins de validação e visualização, a
+biblioteca também possui uma rotina que calcula as distâncias a partir da árvore
+de predecessores. 
+
+A validação implementada na biblioteca segue a ideia da validação do
+Graph500 discutida na Seção~\ref{sec:graph500-validacao}. Em vez de comparar a
+BFS com uma árvore fixa, a validação verifica propriedades estruturais do
+resultado. Primeiro, confere se os predecessores são válidos, se a raiz aponta
+para si mesma e se sua distância é zero. Depois, percorre as arestas do CSR
+distribuído para verificar se não existe aresta ligando um vértice visitado a um
+vértice não visitado, se as distâncias de vértices adjacentes diferem no máximo
+em um nível e se cada predecessor declarado corresponde a uma aresta existente.

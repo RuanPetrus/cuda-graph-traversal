@@ -1,0 +1,82 @@
+Best ryzen 5600xt bfs run
+```
+ubuntu@nemesis:~/graph500$ SKIP_VALIDATION=1 mpirun  --use-hwthread-cpus -np 12 --bind-to hwthread ./src/graph500_reference_bfs 22 16 2> /dev/null
+SCALE:                          22
+edgefactor:                     16
+NBFS:                           64
+graph_generation:               3.35317
+num_mpi_processes:              12
+construction_time:              1.07975
+bfs  min_time:                  0.285254
+bfs  firstquartile_time:        0.304966
+bfs  median_time:               0.312916
+bfs  thirdquartile_time:        0.321184
+bfs  max_time:                  0.456872
+bfs  mean_time:                 0.316278
+bfs  stddev_time:               0.0227458
+min_nedge:                      67106224
+firstquartile_nedge:            67106224
+median_nedge:                   67106224
+thirdquartile_nedge:            67106224
+max_nedge:                      67106224
+mean_nedge:                     67106224
+stddev_nedge:                   0
+bfs  min_TEPS:                  1.46882e+08
+bfs  firstquartile_TEPS:        2.08934e+08
+bfs  median_TEPS:               2.14455e+08
+bfs  thirdquartile_TEPS:        2.20045e+08
+bfs  max_TEPS:                  2.35251e+08
+bfs  harmonic_mean_TEPS:     !  2.12175e+08
+bfs  harmonic_stddev_TEPS:      1.92245e+06
+bfs  min_validate:              -1
+bfs  firstquartile_validate:    -1
+bfs  median_validate:           -1
+bfs  thirdquartile_validate:    -1
+bfs  max_validate:              -1
+bfs  mean_validate:             -1
+bfs  stddev_validate:           0
+```
+Best rx 5060ti 16gb run
+```
+ubuntu@nemesis:~/graph500$ SKIP_VALIDATION=1 CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP="mpi" mpirun --allow-run-as-root -n 1 -np 1 ./src/graph500_nvshmem_custom_bfs 22 16 2> /dev/null
+NVSHMEM v3.5.21
+SCALE:                          22
+edgefactor:                     16
+NBFS:                           64
+graph_generation:               0.216299
+num_mpi_processes:              1
+construction_time:              4.8638
+bfs  min_time:                  0.154097
+bfs  firstquartile_time:        0.168236
+bfs  median_time:               0.186042
+bfs  thirdquartile_time:        0.195098
+bfs  max_time:                  0.250433
+bfs  mean_time:                 0.182756
+bfs  stddev_time:               0.0178629
+min_nedge:                      67106224
+firstquartile_nedge:            67106224
+median_nedge:                   67106224
+thirdquartile_nedge:            67106224
+max_nedge:                      67106224
+mean_nedge:                     67106224
+stddev_nedge:                   0
+bfs  min_TEPS:                  2.67961e+08
+bfs  firstquartile_TEPS:        3.43961e+08
+bfs  median_TEPS:               3.60705e+08
+bfs  thirdquartile_TEPS:        3.98882e+08
+bfs  max_TEPS:                  4.3548e+08
+bfs  harmonic_mean_TEPS:     !  3.6719e+08
+bfs  harmonic_stddev_TEPS:      4.52169e+06
+bfs  min_validate:              -1
+bfs  firstquartile_validate:    -1
+bfs  median_validate:           -1
+bfs  thirdquartile_validate:    -1
+bfs  max_validate:              -1
+bfs  mean_validate:             -1
+bfs  stddev_validate:           0
+
+```
+Speedup
+Graph generation: 15.5024757396012
+BFS median teps : 1.6819612506120165
+

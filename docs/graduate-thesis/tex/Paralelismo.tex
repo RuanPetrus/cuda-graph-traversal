@@ -13,14 +13,6 @@ discutida por Asanovic et al., que descrevem o paralelismo como um caminho
 necessario para continuar aumentando desempenho em arquiteturas modernas
 \cite{asanoviclandscape}.
 
-% Apesar do termo concorrencia e paralelismo estarem relacionados, existe uma grande
-% diferenca entre os dois. A concorrencia descreve a separacao de partes de uma tarefa
-% que podem ser executadas de forma sobreposta, mas nao eh necessario que sejam executadas
-% de ao mesmo tempo. O paralelismo exige uma execucao simultanea em mais de uma unidade de
-% processamento. Um sistema operacional por exemplo, consegue alternar entre varias tarefas
-% utilizando um unico nucleo, e assim oferece concorrencia. Um processador com varios nucleos
-% consegue executar tarefas distintas ao mesmo tmepo, e portante oferece paralelismo.
-
 Uma forma classica de classificar arquiteturas paralelas e a taxonomia de Flynn,
 que organiza sistemas conforme o numero de fluxos de instrucoes e de dados
 processados simultaneamente \cite{flynntaxonomy}. Nessa taxonomia, SISD
@@ -33,39 +25,6 @@ executam instrucoes distintas sobre dados distintos. CPUs multicore se aproximam
 do modelo MIMD, enquanto GPUs modernas combinam elementos SIMD/MIMD com grande
 quantidade de threads.
 
-% \section{Formas de Paralelismo}
-% 
-% O paralelismo pode aparecer em diferentes niveis de um sistema computacional. No
-% nivel de instrucao, o processador tenta executar ou sobrepor instrucoes
-% independentes por meio de tecnicas como \textit{pipeline}, execucao fora de ordem
-% e unidades funcionais multiplas. Esse tipo de paralelismo e explorado em grande
-% parte pelo hardware e pelo compilador, sem exigir que o programador divida
-% explicitamente o problema.
-% 
-% No nivel de dados, a mesma operacao e aplicada a muitos elementos. Operacoes em
-% vetores, matrizes, imagens, malhas numericas e listas de arestas sao exemplos
-% comuns. Esse padrao e adequado a unidades vetoriais SIMD e tambem a GPUs, pois
-% muitos elementos podem ser processados por threads diferentes usando o mesmo
-% codigo. Em uma multiplicacao de vetores, por exemplo, cada posicao do vetor de
-% saida pode ser calculada de forma independente.
-% 
-% No nivel de tarefas, unidades de execucao diferentes realizam partes distintas do
-% trabalho. Um programa pode ter uma tarefa responsavel por leitura de dados, outra
-% por processamento e outra por escrita de resultados. Em sistemas de memoria
-% distribuida, tarefas podem ser executadas por processos diferentes, que se
-% comunicam por mensagens. Em algoritmos de grafos, por exemplo, diferentes
-% processos podem armazenar partes distintas do grafo e trocar informacoes quando
-% uma aresta conecta vertices pertencentes a particoes diferentes.
-% 
-% Tambem e comum distinguir paralelismo conforme o modelo de memoria. Em memoria
-% compartilhada, varias threads acessam um mesmo espaco de enderecamento. Esse
-% modelo facilita o compartilhamento de estruturas, mas exige cuidado com condicoes
-% de corrida, sincronizacao e coerencia de cache. Em memoria distribuida, cada
-% processo possui sua propria memoria e a comunicacao ocorre explicitamente, por
-% exemplo com MPI. Esse modelo e comum em clusters e supercomputadores. Sistemas
-% modernos frequentemente combinam os dois modelos: cada no possui CPUs multicore e
-% GPUs com memoria local, enquanto os nos se comunicam por rede.
-
 \section{Processamento Multicore}
 
 Processadores multicore integram varios nucleos de CPU em um mesmo chip. Cada
@@ -76,27 +35,10 @@ que varias threads ou processos avancem simultaneamente. Esse modelo se tornou a
 estrategia dominante para continuar aumentando desempenho sem depender apenas do
 aumento de frequencia \cite{hennessypatterson}.
 
-% CPUs multicore sao projetadas para oferecer bom desempenho em cargas de trabalho
-% variadas. Seus nucleos geralmente possuem caches sofisticados, predicao de
-% desvios, execucao especulativa e suporte eficiente a controle de fluxo irregular.
-% Essas caracteristicas tornam CPUs adequadas para programas com muitas decisoes,
-% estruturas de dados complexas e dependencias entre operacoes. Por outro lado,
-% como cada nucleo e relativamente grande e complexo, o numero total de nucleos e
-% limitado quando comparado a aceleradores manycore, como GPUs.
-
 Em programacao multicore, uma estrategia comum e criar threads que compartilham a
 memoria do processo. Bibliotecas e modelos como POSIX Threads, OpenMP e C++
 Threads permitem dividir lacos, tarefas ou regioes independentes do programa. O
 desafio principal e garantir corretude e desempenho ao mesmo tempo. 
-
-% Outro aspecto importante em CPUs multicore e a hierarquia de memoria. O acesso a
-% registradores e caches e muito mais rapido do que o acesso a memoria principal.
-% Assim, o desempenho paralelo depende nao apenas da divisao do trabalho, mas
-% tambem da localidade dos dados. Se muitas threads atualizam dados proximos na
-% memoria ou compartilham a mesma linha de cache, pode ocorrer contencao e perda de
-% desempenho. Em maquinas com varios soquetes, tambem pode existir NUMA
-% (\textit{Non-Uniform Memory Access}), em que o tempo de acesso depende de qual
-% processador esta fisicamente mais proximo da memoria acessada.
 
 \section{Processamento Manycore}
 

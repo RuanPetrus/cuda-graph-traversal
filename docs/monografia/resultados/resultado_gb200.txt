@@ -1,0 +1,18 @@
+GB200 with a grace processor with 128 thread and four GB200 GPUs
+
+Reference implementation with 128 threads
+scale 19, graph generation 2.493310 s, 1.003 * 10^9 median_TEPS
+scale 21, graph generation 3.08133 s, 1.54 * 10^9 median_TEPS
+scale 23, graph generation 3.0849 s, 1.46 * 10^9 median_TEPS
+scale 25, graph generation 3.34561 s, 1.78 * 10^9 median_TEPS
+scale 27, graph generation 6.96 s, 1.88 * 10^9 median_TEPS
+scale 29, graph generation 31.13 s, 1.57 * 10^9 median_TEPS
+
+
+Biblioteca only GPU implementation with 4 GPU
+scale 20, graph generation 0.1414 s, 8.924 * 10^8 median_TEPS
+scale 22, graph generation 0.512 s, 1.395 * 10^9 median_TEPS
+scale 24, graph generation 1.335 s, 2.4 * 10^9 median_TEPS
+scale 26, graph generation 1.526 s, 3.4 * 10^9 median_teps
+scale 28, graph generation 1.343 s, 4.955 * 10^9 median_teps
+scale 29, graph generation 2.738 s, 6.18 * 10^9 median_teps
