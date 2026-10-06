@@ -4,6 +4,16 @@ Distributed Graph500-style BFS and SSSP using CUDA, MPI, and NVSHMEM.
 
 Library code is in `src/`; the runnable example is `examples/graph500_runner.cu`.
 
+## Requirements
+
+- Linux with an NVIDIA GPU and compatible CUDA driver/toolkit.
+- CUDA compiler (`nvcc`).
+- MPI implementation with development headers, such as OpenMPI.
+- NVSHMEM built with CUDA and MPI support.
+- GNU Make.
+
+The Makefile defaults to `/usr/local/cuda`, `/opt/nvshmem`, and the system OpenMPI path. Override `CUDA_HOME`, `NVSHMEM_HOME`, or `MPI_HOME` when needed.
+
 ## Build
 
 ```sh
