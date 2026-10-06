@@ -181,7 +181,7 @@ __global__ static void bfs_edge_count_kernel(const u64 *rowstarts, const u64 *co
 	}
 }
 
-static u64 oned_graph_bfs_edge_count(Worker_State *ws, Arena *temp_arena, const Oned_Graph *g, const Bfs_State *bfs) {
+static u64 oned_graph_edge_count(Worker_State *ws, Arena *temp_arena, const Oned_Graph *g, const i64 *pred) {
 	u64 *local_edge_count_gpu = arena_push_array(temp_arena, 1, u64);
 	CHECK_CUDA(cudaMemset(local_edge_count_gpu, 0, sizeof(u64)));
 
@@ -189,7 +189,7 @@ static u64 oned_graph_bfs_edge_count(Worker_State *ws, Arena *temp_arena, const 
 	u64 blocks_needed = INT_CEIL(g->nlocalverts, (u64)threads_per_block);
 	i32 blocks = blocks_needed > 65535 ? 65535 : (i32)blocks_needed;
 	if (blocks == 0) blocks = 1;
-	bfs_edge_count_kernel<<<blocks, threads_per_block>>>(g->rowstarts, g->column, bfs->pred, g->nlocalverts, local_edge_count_gpu, ws->rank, ws->rank_size);
+	bfs_edge_count_kernel<<<blocks, threads_per_block>>>(g->rowstarts, g->column, pred, g->nlocalverts, local_edge_count_gpu, ws->rank, ws->rank_size);
 	CHECK_CUDA(cudaGetLastError());
 	CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -311,7 +311,7 @@ i32 main(i32 argc, char **argv) {
 			oned_graph_bfs_run(&ws, &g, &bfs, root);
 			double bfs_stop = MPI_Wtime();
 			bfs_times[bfs_root_idx] = bfs_stop - bfs_start;
-			edge_counts[bfs_root_idx] = (f64)oned_graph_bfs_edge_count(&ws, &validation_arena, &g, &bfs);
+			edge_counts[bfs_root_idx] = (f64)oned_graph_edge_count(&ws, &validation_arena, &g, bfs.pred);
 			arena_clear(&validation_arena);
 			if (getenv("WRITE_DOT")) {
 				bfs_compute_dist_from_pred(&ws, &g, &bfs, root);
@@ -388,6 +388,47 @@ i32 main(i32 argc, char **argv) {
 		}
 
 		oned_graph_bfs_destroy(&bfs);
+	}
+
+	if (!getenv("SKIP_SSSP") && bfs_root_count > 0) {
+		Sssp_State sssp = oned_graph_sssp_create(&ws, &g);
+		Arena count_arena = arena_from_arena(&ws.gpu_arena, sizeof(u64) + KILOBYTE(4));
+		f64 *sssp_times = arena_push_array(&ws.cpu_arena, bfs_root_count, f64);
+		f64 *edge_counts = arena_push_array(&ws.cpu_arena, bfs_root_count, f64);
+
+		oned_graph_sssp_clear(&ws, &sssp);
+		oned_graph_sssp_run(&ws, &g, &sssp, bfs_roots[0]);
+
+		for (i32 sssp_root_idx = 0; sssp_root_idx < bfs_root_count; ++sssp_root_idx) {
+			u64 root = bfs_roots[sssp_root_idx];
+			oned_graph_sssp_clear(&ws, &sssp);
+			double sssp_start = MPI_Wtime();
+			oned_graph_sssp_run(&ws, &g, &sssp, root);
+			double sssp_stop = MPI_Wtime();
+			sssp_times[sssp_root_idx] = sssp_stop - sssp_start;
+			edge_counts[sssp_root_idx] = (f64)oned_graph_edge_count(&ws, &count_arena, &g, sssp.pred);
+			arena_clear(&count_arena);
+		}
+
+		if (ws.rank == 0) {
+			volatile f64 stats[s_LAST];
+			get_statistics(&ws, sssp_times, bfs_root_count, stats);
+			fprintf(stdout, "sssp min_time:                  %g\n", stats[s_minimum]);
+			fprintf(stdout, "sssp firstquartile_time:        %g\n", stats[s_firstquartile]);
+			fprintf(stdout, "sssp median_time:               %g\n", stats[s_median]);
+			fprintf(stdout, "sssp thirdquartile_time:        %g\n", stats[s_thirdquartile]);
+			fprintf(stdout, "sssp max_time:                  %g\n", stats[s_maximum]);
+			fprintf(stdout, "sssp mean_time:                 %g\n", stats[s_mean]);
+			fprintf(stdout, "sssp stddev_time:               %g\n", stats[s_std]);
+
+			for (i32 i = 0; i < bfs_root_count; ++i) edge_counts[i] = sssp_times[i] / edge_counts[i];
+			get_statistics(&ws, edge_counts, bfs_root_count, stats);
+			fprintf(stdout, "sssp min_TEPS:                  %g\n", 1.0 / stats[s_maximum]);
+			fprintf(stdout, "sssp median_TEPS:               %g\n", 1.0 / stats[s_median]);
+			fprintf(stdout, "sssp max_TEPS:                  %g\n", 1.0 / stats[s_minimum]);
+		}
+
+		oned_graph_sssp_destroy(&sssp);
 	}
 
 	if (getenv("WRITE_DOT")) {

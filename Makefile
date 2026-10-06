@@ -7,26 +7,17 @@ MPI_HOME     ?= /usr/lib/x86_64-linux-gnu/openmpi
 NVCC         = $(CUDA_HOME)/bin/nvcc
 
 BUILD_DIR = build
-SRC_DIR = src-refactor
-OLD_SRC_DIR = src
+SRC_DIR = src
+EXAMPLES_DIR = examples
 
-COMMON_SOURCES = \
+LIBRARY_SOURCES = \
 	$(SRC_DIR)/graph_generation.cu \
 	$(SRC_DIR)/base.cu \
-	$(SRC_DIR)/mrg_transitions.cu \
 	$(SRC_DIR)/traversal.cu \
 	$(SRC_DIR)/visualization.cu \
-	$(SRC_DIR)/main.cu \
 	$(SRC_DIR)/worker.cu
 
-OLD_SOURCES = \
-	$(OLD_SRC_DIR)/graph500_runner.c \
-	$(OLD_SRC_DIR)/graph_generator.cu \
-	$(OLD_SRC_DIR)/traversal.cu \
-	$(OLD_SRC_DIR)/utils.c \
-	$(OLD_SRC_DIR)/validate.c \
-	$(OLD_SRC_DIR)/csr_reference.c \
-	$(OLD_SRC_DIR)/mpi_message.c
+RUNNER_SOURCES = $(LIBRARY_SOURCES) $(EXAMPLES_DIR)/graph500_runner.cu
 
 HEADERS = \
 	$(SRC_DIR)/graph_generation.h \
@@ -36,13 +27,10 @@ HEADERS = \
 	$(SRC_DIR)/base.h
 
 BINARY = $(BUILD_DIR)/graph500_runner
-OLD_BINARY = $(BUILD_DIR)/graph500_runner_old
 
-.PHONY: all old dots-svg clean-dots-svg clean
+.PHONY: all dots-svg clean-dots-svg clean
 
 all: $(BINARY)
-
-old: $(OLD_BINARY)
 
 dots-svg:
 	@command -v dot >/dev/null 2>&1 || { echo "Graphviz 'dot' not found. Install graphviz to build SVGs."; exit 1; }
@@ -57,18 +45,11 @@ clean-dots-svg:
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
-$(BINARY): $(COMMON_SOURCES) $(HEADERS) | $(BUILD_DIR)
+$(BINARY): $(RUNNER_SOURCES) $(HEADERS) | $(BUILD_DIR)
 	$(NVCC) $(CFLAGS) -DSSSP -rdc=true \
-		-I$(NVSHMEM_HOME)/include -I$(MPI_HOME)/include \
+		-I$(SRC_DIR) -I$(NVSHMEM_HOME)/include -I$(MPI_HOME)/include \
 	-o $@ \
-	$(COMMON_SOURCES) \
-	$(LDFLAGS) -L$(NVSHMEM_HOME)/lib -L$(MPI_HOME)/lib -lnvshmem_host -lnvshmem_device -lmpi -lm
-
-$(OLD_BINARY): $(OLD_SOURCES) $(OLD_SRC_DIR)/common.h | $(BUILD_DIR)
-	$(NVCC) $(CFLAGS) -DSSSP -DUSER_SETTINGS -rdc=true \
-		-I$(NVSHMEM_HOME)/include -I$(MPI_HOME)/include \
-	-o $@ \
-	$(OLD_SOURCES) \
+	$(RUNNER_SOURCES) \
 	$(LDFLAGS) -L$(NVSHMEM_HOME)/lib -L$(MPI_HOME)/lib -lnvshmem_host -lnvshmem_device -lmpi -lm
 
 clean:
