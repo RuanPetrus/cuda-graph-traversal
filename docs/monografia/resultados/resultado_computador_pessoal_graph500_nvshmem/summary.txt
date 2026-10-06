@@ -1,9 +1,0 @@
-Output directory: /workspace/graph500/results/cpu_gpu_bfs_20260701_230022
-CSV: /workspace/graph500/results/cpu_gpu_bfs_20260701_230022/teps_by_scale.csv
-MIN_SCALE: 12
-MAX_SCALE: 22
-EDGEFACTOR: 16
-CPU_NP: 12
-GPU_NP: 1
-RUN_VALIDATION: 0
-Max common successful SCALE: 22

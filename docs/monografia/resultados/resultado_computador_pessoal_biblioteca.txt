@@ -1,9 +1,0 @@
-biblioteca 5060ti 16 gb
-
-One thread one GPU
-scale 13, graph generation 0.0032 s, 4.42 * 10^8 median_TEPS
-scale 15, graph generation 0.0060 s, 9.0 * 10^8 median_TEPS
-scale 17, graph generation 0.0147 s, 1.5 * 10^9 median_TEPS
-scale 19, graph generation 0.049 s, 2.25 * 10^9 median_TEPS
-scale 21, graph generation 0.155 s, 2.138 * 10^9 median_TEPS
-scale 23, graph generation 0.389 s, 1.14 * 10^9 median_TEPS

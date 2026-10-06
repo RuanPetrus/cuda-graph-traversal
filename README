@@ -1,31 +1,26 @@
-NVSHMEM Graph Traversal
+# NVSHMEM Graph Traversal
 
-This repository keeps the NVSHMEM graph traversal implementation derived from the Graph500 benchmark infrastructure. The CPU MPI traversal implementations have been removed.
+Distributed Graph500-style BFS and SSSP using CUDA, MPI, and NVSHMEM.
 
-Build from the repository root:
+Library code is in `src/`; the runnable example is `examples/graph500_runner.cu`.
+
+## Build
 
 ```sh
 make
 ```
 
-The build compiles the Graph500 runner example against the refactored library sources.
-It produces:
-
-- `build/graph500_runner`: NVSHMEM BFS and SSSP example.
-
-The binary takes `SCALE` and optional `edgefactor` arguments:
+## Run
 
 ```sh
-CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP=mpi mpirun --allow-run-as-root -np 1 ./build/graph500_runner 14 16
-CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP=mpi SKIP_BFS=1 mpirun --allow-run-as-root -np 1 ./build/graph500_runner 14 16
+CUDA_VISIBLE_DEVICES=0 NVSHMEM_BOOTSTRAP=mpi \
+mpirun --allow-run-as-root -np 1 ./build/graph500_runner 12 16
 ```
 
-Library sources are in `src/`; the runner entry point is `examples/graph500_runner.cu`.
+Arguments are `SCALE` and optional `edgefactor` (default: `16`).
 
-Useful environment variables:
+Set `SKIP_BFS=1`, `SKIP_SSSP=1`, `SKIP_VALIDATION=1`, or `WRITE_DOT=1` as needed.
 
-- `SKIP_VALIDATION=1`: disables validation for performance-only runs.
-- `SKIP_BFS=1`: skips BFS.
-- `SKIP_SSSP=1`: skips SSSP.
+## GPU Assignment
 
-Current settings assume a power-of-two MPI process count. Use small scales such as `12` or `14` for smoke tests.
+MPI rank `r` uses GPU `r % gpu_count`. Ranks sharing a GPU share its compute resources; the default NVSHMEM arena size divides available GPU memory among those ranks. Set `NVSHMEM_SYMMETRIC_SIZE` to override that memory size.
